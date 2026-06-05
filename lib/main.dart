@@ -766,88 +766,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildCountdownTimerSection() {
     final String secondsStr = _countdownSeconds.toString().padLeft(2, '0');
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
         color: const Color(0xFF1E2135),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white10, width: 1.0),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFF00E5FF).withOpacity(0.15),
+          width: 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF00E5FF).withOpacity(0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          )
+        ],
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Expanded(
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF00E5FF).withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.sync_rounded,
-                    color: Color(0xFF00E5FF),
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        "Automatic Sync",
-                        style: GoogleFonts.outfit(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        "Synchronized with AFO Edge averages",
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.white54,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+          const Icon(
+            Icons.sync_rounded,
+            color: Color(0xFF00E5FF),
+            size: 18,
           ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.black26,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: const Color(0xFF00E5FF).withOpacity(0.3),
-                width: 1.0,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.timer_outlined,
-                  color: Color(0xFF00E5FF),
-                  size: 14,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  "Data refreshes at 00:$secondsStr",
-                  style: GoogleFonts.outfit(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: const Color(0xFF00E5FF),
-                  ),
-                ),
-              ],
+          const SizedBox(width: 10),
+          Text(
+            "Data refreshes at 00:$secondsStr",
+            style: GoogleFonts.outfit(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: const Color(0xFF00E5FF),
+              letterSpacing: 0.2,
             ),
           ),
         ],
