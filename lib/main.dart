@@ -53,6 +53,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _dismissedThisAlertCycle = false;
   String? _lastAlertMsg;
 
+  double _calculateForceNewton(int adc) {
+    if (adc >= 1022) return 0.0; // no force applied
+    int normalizedAdc = adc <= 1 ? 1 : adc;
+    
+    const double rSeries = 10000.0; // 10k ohm resistor
+    final double rFsr = rSeries * normalizedAdc / (1023.0 - normalizedAdc);
+    if (rFsr <= 0) return 0.0;
+    
+    final double conductance = 1000000.0 / rFsr;
+    double force;
+    if (conductance <= 1000.0) {
+      force = conductance / 80.0;
+    } else {
+      force = (conductance - 1000.0) / 30.0;
+    }
+    return force > 100.0 ? 100.0 : force;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -762,15 +780,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   /// Foot Sole pressure illustration
   Widget _buildFootSoleVisualizer(AfoTelemetry data) {
-    // Scale size of sensors according to pressure (0 - 1023)
-    double fsr1Size = 25 + (data.fsr1 / 1023) * 35;
-    double fsr2Size = 25 + (data.fsr2 / 1023) * 35;
+    final double force1 = _calculateForceNewton(data.fsr1);
+    final double force2 = _calculateForceNewton(data.fsr2);
 
-    // Color based on force level
-    Color getForceColor(int value) {
-      if (value < 200) return const Color(0xFF00FFC2).withOpacity(0.3);
-      if (value < 600) return const Color(0xFF8B5CF6);
-      return const Color(0xFFEF4444);
+    // Scale size of sensors according to force in Newtons (0 - 100)
+    double fsr1Size = 25 + (force1 / 100.0) * 35;
+    double fsr2Size = 25 + (force2 / 100.0) * 35;
+
+    // Color based on force level (calibrated in Newtons)
+    Color getForceColor(double force) {
+      if (force < 5.0) return const Color(0xFF00FFC2).withOpacity(0.3); // Safe/low pressure
+      if (force < 45.0) return const Color(0xFF8B5CF6); // Moderate pressure
+      return const Color(0xFFEF4444); // High/danger pressure
     }
 
     return Container(
@@ -799,11 +820,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               width: fsr1Size,
               height: fsr1Size,
               decoration: BoxDecoration(
-                color: getForceColor(data.fsr1),
+                color: getForceColor(force1),
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: getForceColor(data.fsr1).withOpacity(0.5),
+                    color: getForceColor(force1).withOpacity(0.5),
                     blurRadius: 10,
                     spreadRadius: 2,
                   )
@@ -811,7 +832,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               child: Center(
                 child: Text(
-                  "${data.fsr1}",
+                  "${force1.toStringAsFixed(0)}",
                   style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
               ),
@@ -827,11 +848,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               width: fsr2Size,
               height: fsr2Size,
               decoration: BoxDecoration(
-                color: getForceColor(data.fsr2),
+                color: getForceColor(force2),
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: getForceColor(data.fsr2).withOpacity(0.5),
+                    color: getForceColor(force2).withOpacity(0.5),
                     blurRadius: 10,
                     spreadRadius: 2,
                   )
@@ -839,7 +860,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               child: Center(
                 child: Text(
-                  "${data.fsr2}",
+                  "${force2.toStringAsFixed(0)}",
                   style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
               ),
@@ -878,23 +899,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   /// Live Bar Chart Section
   Widget _buildForceGraphSection(AfoTelemetry data) {
-    double calculateForceNewton(int adc) {
-      if (adc <= 10) return 0.0;
-      int normalizedAdc = adc >= 1023 ? 1022 : adc; // avoid division by zero
-      
-      const double rSeries = 10000.0; // 10k ohm resistor
-      final double rFsr = rSeries * (1023.0 - normalizedAdc) / normalizedAdc;
-      if (rFsr <= 0) return 0.0;
-      
-      final double conductance = 1000000.0 / rFsr;
-      double force;
-      if (conductance <= 1000.0) {
-        force = conductance / 80.0;
-      } else {
-        force = (conductance - 1000.0) / 30.0;
-      }
-      return force > 100.0 ? 100.0 : force;
-    }
+    final double force1 = _calculateForceNewton(data.fsr1);
+    final double force2 = _calculateForceNewton(data.fsr2);
 
     return Container(
       height: 260,
@@ -929,9 +935,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       showTitles: true,
                       reservedSize: 45,
                       getTitlesWidget: (value, meta) {
-                        double forceNewton = value == 0 
-                            ? calculateForceNewton(data.fsr1) 
-                            : calculateForceNewton(data.fsr2);
+                        double forceNewton = value == 0 ? force1 : force2;
                         String name = value == 0 
                             ? "FSR 1 (Medial)\n${forceNewton.toStringAsFixed(1)} N" 
                             : "FSR 2 (Lateral)\n${forceNewton.toStringAsFixed(1)} N";
@@ -976,7 +980,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     x: 0,
                     barRods: [
                       BarChartRodData(
-                        toY: calculateForceNewton(data.fsr1),
+                        toY: force1,
                         width: 50,
                         gradient: const LinearGradient(
                           colors: [Color(0xFF8B5CF6), Color(0xFF00FFC2)],
@@ -991,7 +995,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     x: 1,
                     barRods: [
                       BarChartRodData(
-                        toY: calculateForceNewton(data.fsr2),
+                        toY: force2,
                         width: 50,
                         gradient: const LinearGradient(
                           colors: [Color(0xFF8B5CF6), Color(0xFF00E5FF)],
