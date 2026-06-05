@@ -17,7 +17,7 @@
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
 
     <application
-        android:label="smart_afo_app"
+        android:label="AFO SmartLink"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         <activity

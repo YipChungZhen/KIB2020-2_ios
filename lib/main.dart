@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -33,7 +34,226 @@ class SmartAfoApp extends StatelessWidget {
           error: Color(0xFFEF4444),
         ),
       ),
-      home: const DashboardScreen(),
+      home: const SplashScreen(),
+    );
+  }
+}
+
+class SplashScreen extends StatefulWidget {
+  const SplashScreen({Key? key}) : super(key: key);
+
+  @override
+  State<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _logoScale;
+  late Animation<double> _logoOpacity;
+  late Animation<double> _textOpacity;
+  late Animation<double> _brandOpacity;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2500),
+    );
+
+    _logoScale = Tween<double>(begin: 0.5, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.0, 0.6, curve: Curves.easeOutBack),
+      ),
+    );
+
+    _logoOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.0, 0.4, curve: Curves.easeIn),
+      ),
+    );
+
+    _textOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.4, 0.8, curve: Curves.easeIn),
+      ),
+    );
+
+    _brandOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.7, 1.0, curve: Curves.easeIn),
+      ),
+    );
+
+    _controller.forward();
+
+    // Navigate to Dashboard after 3.5 seconds
+    Timer(const Duration(milliseconds: 3500), () {
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) => const DashboardScreen(),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+              return FadeTransition(opacity: animation, child: child);
+            },
+            transitionDuration: const Duration(milliseconds: 800),
+          ),
+        );
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF0A0D18), Color(0xFF13172E)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Stack(
+          children: [
+            // Center Content (Logo and Title)
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Logo with fade & scale animation
+                  AnimatedBuilder(
+                    animation: _controller,
+                    builder: (context, child) {
+                      return Opacity(
+                        opacity: _logoOpacity.value,
+                        child: Transform.scale(
+                          scale: _logoScale.value,
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: 120,
+                      height: 120,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFF8B5CF6).withOpacity(0.5),
+                          width: 2.0,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF8B5CF6).withOpacity(0.3),
+                            blurRadius: 20,
+                            spreadRadius: 5,
+                          ),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: Image.asset(
+                          'assets/app_icon.jpg',
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  // App Title and Subtitle with fade animation
+                  AnimatedBuilder(
+                    animation: _controller,
+                    builder: (context, child) {
+                      return Opacity(
+                        opacity: _textOpacity.value,
+                        child: child,
+                      );
+                    },
+                    child: Column(
+                      children: [
+                        Text(
+                          "AFO SmartLink",
+                          style: GoogleFonts.outfit(
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: -0.5,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          "Intelligent Plantar Biometrics",
+                          style: GoogleFonts.outfit(
+                            fontSize: 16,
+                            color: const Color(0xFF00E5FF),
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Bottom "powered by Antigravity" branding tag
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 40.0),
+                child: AnimatedBuilder(
+                  animation: _controller,
+                  builder: (context, child) {
+                    return Opacity(
+                      opacity: _brandOpacity.value,
+                      child: child,
+                    );
+                  },
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        "powered by",
+                        style: GoogleFonts.outfit(
+                          fontSize: 12,
+                          color: Colors.white38,
+                          fontWeight: FontWeight.w400,
+                          letterSpacing: 1.0,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "Antigravity",
+                        style: GoogleFonts.outfit(
+                          fontSize: 16,
+                          color: Colors.white.withOpacity(0.85),
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                          shadows: [
+                            Shadow(
+                              color: const Color(0xFF00E5FF).withOpacity(0.5),
+                              blurRadius: 10,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -52,6 +272,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   DateTime? _snoozeAlertsUntil;
   bool _dismissedThisAlertCycle = false;
   String? _lastAlertMsg;
+
+  // 30s Refresh Countdown State
+  int _countdownSeconds = 30;
+  Timer? _countdownTimer;
+  int? _lastFsr1;
+  int? _lastFsr2;
+  double? _lastCop;
 
   double _calculateForceNewton(int adc) {
     if (adc >= 1022) return 0.0; // no force applied
@@ -76,17 +303,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.initState();
     // Listener to check thresholds and trigger visual warning changes
     _ble.telemetry.addListener(_checkThresholds);
+    _startCountdownTimer();
   }
 
   @override
   void dispose() {
     _ble.telemetry.removeListener(_checkThresholds);
+    _countdownTimer?.cancel();
     super.dispose();
+  }
+
+  void _startCountdownTimer() {
+    _countdownTimer?.cancel();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          if (_countdownSeconds > 0) {
+            _countdownSeconds--;
+          } else {
+            _countdownSeconds = 30;
+          }
+        });
+      }
+    });
   }
 
   void _checkThresholds() {
     final data = _ble.telemetry.value;
     if (data == null) return;
+
+    // Self-synchronization logic:
+    // If fsr1, fsr2, or cop has changed from the last cached package, it means
+    // the 30-second window has refreshed on the board.
+    if (_lastFsr1 != data.fsr1 || _lastFsr2 != data.fsr2 || _lastCop != data.cop) {
+      _lastFsr1 = data.fsr1;
+      _lastFsr2 = data.fsr2;
+      _lastCop = data.cop;
+      setState(() {
+        _countdownSeconds = 30;
+      });
+    }
 
     // Threshold logic:
     // Asymmetry is defined when weight is shifted significantly to one side (|COP| > 0.40)
@@ -507,6 +763,98 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  Widget _buildCountdownTimerSection() {
+    final String secondsStr = _countdownSeconds.toString().padLeft(2, '0');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E2135),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white10, width: 1.0),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF00E5FF).withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.sync_rounded,
+                    color: Color(0xFF00E5FF),
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        "Automatic Sync",
+                        style: GoogleFonts.outfit(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        "Synchronized with AFO Edge averages",
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.white54,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.black26,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: const Color(0xFF00E5FF).withOpacity(0.3),
+                width: 1.0,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.timer_outlined,
+                  color: Color(0xFF00E5FF),
+                  size: 14,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  "Data refreshes at 00:$secondsStr",
+                  style: GoogleFonts.outfit(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFF00E5FF),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Dashboard Metrics Section
   Widget _buildMetricsSection() {
     return ValueListenableBuilder<AfoTelemetry?>(
@@ -532,6 +880,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 20),
           sliver: SliverList(
             delegate: SliverChildListDelegate([
+              _buildCountdownTimerSection(),
+              const SizedBox(height: 20),
               _buildMicroclimateSection(data),
               const SizedBox(height: 20),
               _buildBalanceAnalyticsSection(data),
