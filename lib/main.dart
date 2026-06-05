@@ -878,6 +878,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   /// Live Bar Chart Section
   Widget _buildForceGraphSection(AfoTelemetry data) {
+    double calculateForceNewton(int adc) {
+      if (adc <= 10) return 0.0;
+      int normalizedAdc = adc >= 1023 ? 1022 : adc; // avoid division by zero
+      
+      const double rSeries = 10000.0; // 10k ohm resistor
+      final double rFsr = rSeries * (1023.0 - normalizedAdc) / normalizedAdc;
+      if (rFsr <= 0) return 0.0;
+      
+      final double conductance = 1000000.0 / rFsr;
+      double force;
+      if (conductance <= 1000.0) {
+        force = conductance / 80.0;
+      } else {
+        force = (conductance - 1000.0) / 30.0;
+      }
+      return force > 100.0 ? 100.0 : force;
+    }
+
     return Container(
       height: 260,
       padding: const EdgeInsets.all(20),
@@ -902,7 +920,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: BarChart(
               BarChartData(
                 alignment: BarChartAlignment.spaceAround,
-                maxY: 20,
+                maxY: 100,
                 barTouchData: BarTouchData(enabled: false),
                 titlesData: FlTitlesData(
                   show: true,
@@ -912,8 +930,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       reservedSize: 45,
                       getTitlesWidget: (value, meta) {
                         double forceNewton = value == 0 
-                            ? (data.fsr1 / 1023.0) * 20.0 
-                            : (data.fsr2 / 1023.0) * 20.0;
+                            ? calculateForceNewton(data.fsr1) 
+                            : calculateForceNewton(data.fsr2);
                         String name = value == 0 
                             ? "FSR 1 (Medial)\n${forceNewton.toStringAsFixed(1)} N" 
                             : "FSR 2 (Lateral)\n${forceNewton.toStringAsFixed(1)} N";
@@ -933,7 +951,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       showTitles: true,
                       reservedSize: 40,
                       getTitlesWidget: (value, meta) {
-                        if (value % 5 == 0) {
+                        if (value % 25 == 0) {
                           return Text(
                             "${value.toInt()} N",
                             style: const TextStyle(color: Colors.white30, fontSize: 10),
@@ -949,7 +967,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
-                  horizontalInterval: 5,
+                  horizontalInterval: 25,
                   getDrawingHorizontalLine: (value) => FlLine(color: Colors.white12, strokeWidth: 1),
                 ),
                 borderData: FlBorderData(show: false),
@@ -958,7 +976,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     x: 0,
                     barRods: [
                       BarChartRodData(
-                        toY: (data.fsr1 / 1023.0) * 20.0,
+                        toY: calculateForceNewton(data.fsr1),
                         width: 50,
                         gradient: const LinearGradient(
                           colors: [Color(0xFF8B5CF6), Color(0xFF00FFC2)],
@@ -973,7 +991,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     x: 1,
                     barRods: [
                       BarChartRodData(
-                        toY: (data.fsr2 / 1023.0) * 20.0,
+                        toY: calculateForceNewton(data.fsr2),
                         width: 50,
                         gradient: const LinearGradient(
                           colors: [Color(0xFF8B5CF6), Color(0xFF00E5FF)],
