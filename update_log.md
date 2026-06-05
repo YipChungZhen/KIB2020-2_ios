@@ -26,6 +26,7 @@ Replaced the initial linear force mapping with the standard non-linear calibrati
 * **UI Adjustments (Force Graph):**
   * **Range:** Expanded the chart display maximum (`maxY`) to `100 N` (clamping values above `100 N` to prevent spikes from breaking UI layout).
   * **Labels:** Set clean gridline increments and Y-axis labels at intervals of `25 N` (`0 N`, `25 N`, `50 N`, `75 N`, `100 N`).
+* **Telemetry Broadcast Update:** Changed the BLE broadcast interval on the Linux edge processor (`afo_edge_processor.py`) from 3 minutes to 30 seconds (retaining the 5-minute rolling average for smoothing) to ensure responsive updates in the mobile app.
 
 ---
 
