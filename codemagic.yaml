@@ -1,0 +1,23 @@
+workflows:
+  ios-build:
+    name: iOS Build
+    max_build_duration: 120
+    instance_type: mac_mini_m1
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+    scripts:
+      - name: Set up dependencies
+        script: |
+          flutter packages pub get
+      - name: Build iOS App (Unsigned)
+        script: |
+          flutter build ipa --release --no-codesign
+    artifacts:
+      - build/ios/ipa/*.ipa
