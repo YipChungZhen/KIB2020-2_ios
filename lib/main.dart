@@ -93,7 +93,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     );
 
     // Initialize Video Player Controller
-    _videoController = VideoPlayerController.asset('assets/antigravity_logo.mp4')
+    _videoController = VideoPlayerController.asset('assets/antigravity_logo.webm')
       ..initialize().then((_) {
         if (mounted) {
           setState(() {});
