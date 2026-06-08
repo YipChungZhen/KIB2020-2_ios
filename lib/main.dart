@@ -303,8 +303,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
 
   // AI Settings State
   bool _isAiConsented = false;
-  String _deepSeekApiKey = "";
-  bool _isSimulationMode = true;
+  String _deepSeekApiKey = "sk-28455816c4bc471d97c99a94a32b3e90";
+  bool _isSimulationMode = false;
   bool _developerSettingsExpanded = false;
   
   // AI Generation State
@@ -367,8 +367,11 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _isAiConsented = prefs.getBool('isAiConsented') ?? false;
-      _deepSeekApiKey = prefs.getString('deepSeekApiKey') ?? "";
-      _isSimulationMode = prefs.getBool('isSimulationMode') ?? true;
+      _deepSeekApiKey = prefs.getString('deepSeekApiKey') ?? "sk-28455816c4bc471d97c99a94a32b3e90";
+      if (_deepSeekApiKey.isEmpty) {
+        _deepSeekApiKey = "sk-28455816c4bc471d97c99a94a32b3e90";
+      }
+      _isSimulationMode = prefs.getBool('isSimulationMode') ?? false;
       _apiKeyController.text = _deepSeekApiKey;
     });
   }
