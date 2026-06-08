@@ -12,6 +12,7 @@ dependencies:
   flutter_blue_plus: ^2.3.5
   fl_chart: ^1.2.0
   google_fonts: ^8.1.0
+  video_player: ^2.8.2
 
 dev_dependencies:
   flutter_test:
@@ -29,3 +30,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/app_icon.jpg
+    - assets/antigravity_logo.mp4

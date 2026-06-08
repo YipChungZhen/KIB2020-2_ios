@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:video_player/video_player.dart';
 import 'ble_service.dart';
 
 
@@ -16,7 +18,7 @@ void main() async {
 }
 
 class SmartAfoApp extends StatelessWidget {
-  const SmartAfoApp({Key? key}) : super(key: key);
+  const SmartAfoApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +42,7 @@ class SmartAfoApp extends StatelessWidget {
 }
 
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({Key? key}) : super(key: key);
+  const SplashScreen({super.key});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -52,6 +54,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   late Animation<double> _logoOpacity;
   late Animation<double> _textOpacity;
   late Animation<double> _brandOpacity;
+  late VideoPlayerController _videoController;
 
   @override
   void initState() {
@@ -89,10 +92,27 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       ),
     );
 
+    // Initialize Video Player Controller
+    _videoController = VideoPlayerController.asset('assets/antigravity_logo.mp4')
+      ..initialize().then((_) {
+        if (mounted) {
+          setState(() {});
+        }
+      });
+    _videoController.setVolume(0.0); // Keep muted by default
+    _videoController.setLooping(false); // Do not loop
+
     _controller.forward();
 
-    // Navigate to Dashboard after 3.5 seconds
-    Timer(const Duration(milliseconds: 3500), () {
+    // Delay video playback to synchronize with the fade-in of the branding section
+    Timer(const Duration(milliseconds: 1200), () {
+      if (mounted) {
+        _videoController.play();
+      }
+    });
+
+    // Navigate to Dashboard after 3.8 seconds to give the video enough time to play
+    Timer(const Duration(milliseconds: 3800), () {
       if (mounted) {
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
@@ -110,6 +130,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   @override
   void dispose() {
     _controller.dispose();
+    _videoController.dispose();
     super.dispose();
   }
 
@@ -149,12 +170,12 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: const Color(0xFF8B5CF6).withOpacity(0.5),
+                          color: const Color(0xFF8B5CF6).withValues(alpha: 0.5),
                           width: 2.0,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF8B5CF6).withOpacity(0.3),
+                            color: const Color(0xFF8B5CF6).withValues(alpha: 0.3),
                             blurRadius: 20,
                             spreadRadius: 5,
                           ),
@@ -205,11 +226,11 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                 ],
               ),
             ),
-            // Bottom "powered by Antigravity" branding tag
+            // Bottom "powered by [Video]" branding tag
             Align(
               alignment: Alignment.bottomCenter,
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 40.0),
+                padding: const EdgeInsets.only(bottom: 30.0),
                 child: AnimatedBuilder(
                   animation: _controller,
                   builder: (context, child) {
@@ -230,22 +251,16 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                           letterSpacing: 1.0,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        "Antigravity",
-                        style: GoogleFonts.outfit(
-                          fontSize: 16,
-                          color: Colors.white.withOpacity(0.85),
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.5,
-                          shadows: [
-                            Shadow(
-                              color: const Color(0xFF00E5FF).withOpacity(0.5),
-                              blurRadius: 10,
-                            ),
-                          ],
-                        ),
-                      ),
+                      const SizedBox(height: 8),
+                      _videoController.value.isInitialized
+                          ? SizedBox(
+                              width: 200,
+                              child: AspectRatio(
+                                aspectRatio: _videoController.value.aspectRatio,
+                                child: VideoPlayer(_videoController),
+                              ),
+                            )
+                          : const SizedBox(height: 40),
                     ],
                   ),
                 ),
@@ -259,13 +274,13 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 }
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({Key? key}) : super(key: key);
+  const DashboardScreen({super.key});
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProviderStateMixin {
   final BleService _ble = BleService.instance;
   
   // Alert Snooze Timestamp
@@ -279,6 +294,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int? _lastFsr1;
   int? _lastFsr2;
   double? _lastCop;
+
+  // Status dot pulse animation
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
 
   double _calculateForceNewton(int adc) {
     if (adc >= 1022) return 0.0; // no force applied
@@ -301,6 +320,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    // Pulse animation for status dot
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    _pulseAnimation = Tween<double>(begin: 0.3, end: 1.0).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+    _pulseController.repeat(reverse: true);
+    
     // Listener to check thresholds and trigger visual warning changes
     _ble.telemetry.addListener(_checkThresholds);
     _startCountdownTimer();
@@ -310,6 +339,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void dispose() {
     _ble.telemetry.removeListener(_checkThresholds);
     _countdownTimer?.cancel();
+    _pulseController.dispose();
     super.dispose();
   }
 
@@ -366,6 +396,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _lastAlertMsg = newAlert;
         _dismissedThisAlertCycle = false; // Reset dismiss flag for new alert messages
       });
+      // Trigger haptic feedback for new alerts
+      if (newAlert != null) {
+        HapticFeedback.heavyImpact();
+      }
     }
   }
 
@@ -400,6 +434,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     _buildDeviceList(),
                   ] else ...[
                     _buildActiveAlertBanner(),
+                    if (_isSnoozed) _buildSnoozeBanner(),
                     _buildMetricsSection(),
                   ]
                 ],
@@ -452,20 +487,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: statusColor,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: statusColor.withOpacity(0.5),
-                              blurRadius: 6,
-                              spreadRadius: 2,
-                            )
-                          ],
-                        ),
+                      AnimatedBuilder(
+                        animation: _pulseAnimation,
+                        builder: (context, child) {
+                          final bool isActive = connState == AfoConnectionState.scanning || 
+                                                 connState == AfoConnectionState.connecting;
+                          final double scale = isActive ? _pulseAnimation.value : 1.0;
+                          final double glowOpacity = isActive ? _pulseAnimation.value * 0.6 : 0.5;
+                          return Transform.scale(
+                            scale: scale,
+                            child: Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: statusColor,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: statusColor.withValues(alpha: glowOpacity),
+                                    blurRadius: 8,
+                                    spreadRadius: 3,
+                                  )
+                                ],
+                              ),
+                            ),
+                          );
+                        },
                       ),
                       const SizedBox(width: 8),
                       Text(
@@ -617,6 +664,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
       valueListenable: _ble.scanResults,
       builder: (context, results, _) {
         if (results.isEmpty) {
+          final isScanning = _ble.connectionState.value == AfoConnectionState.scanning;
+          // Show empty state only if a scan has already run (not scanning anymore)
+          if (!isScanning && _ble.connectionState.value == AfoConnectionState.disconnected) {
+            return SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.device_unknown_rounded, size: 48, color: Colors.white.withValues(alpha: 0.2)),
+                      const SizedBox(height: 12),
+                      Text(
+                        "No Smart AFO devices found",
+                        style: GoogleFonts.outfit(
+                          fontSize: 14,
+                          color: Colors.white38,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        "Ensure the orthosis is powered on and nearby",
+                        style: TextStyle(fontSize: 12, color: Colors.white24),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }
           return const SliverToBoxAdapter(
             child: SizedBox.shrink(),
           );
@@ -631,6 +708,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 final deviceName = result.device.platformName.isNotEmpty 
                     ? result.device.platformName 
                     : "Unknown Device";
+                final rssi = result.rssi;
+                final signalStrength = rssi > -60 ? "Strong" : rssi > -80 ? "Fair" : "Weak";
+                final signalColor = rssi > -60 ? const Color(0xFF10B981) : rssi > -80 ? const Color(0xFFFBBF24) : const Color(0xFFEF4444);
                 
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12),
@@ -642,16 +722,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: ListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     leading: CircleAvatar(
-                      backgroundColor: const Color(0xFF8B5CF6).withOpacity(0.2),
+                      backgroundColor: const Color(0xFF8B5CF6).withValues(alpha: 0.2),
                       child: const Icon(Icons.developer_board, color: Color(0xFF8B5CF6)),
                     ),
                     title: Text(
                       deviceName,
                       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
                     ),
-                    subtitle: Text(
-                      result.device.remoteId.str,
-                      style: const TextStyle(color: Colors.white54, fontSize: 12),
+                    subtitle: Row(
+                      children: [
+                        Icon(Icons.signal_cellular_alt_rounded, size: 12, color: signalColor),
+                        const SizedBox(width: 4),
+                        Text(
+                          "$signalStrength ($rssi dBm)",
+                          style: TextStyle(color: signalColor.withValues(alpha: 0.8), fontSize: 11),
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            result.device.remoteId.str,
+                            style: const TextStyle(color: Colors.white38, fontSize: 10),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                     trailing: ElevatedButton(
                       onPressed: () => _ble.connectToDevice(result.device),
@@ -675,86 +769,167 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   /// Active warning alert banner at the top of the dashboard
   Widget _buildActiveAlertBanner() {
-    if (_lastAlertMsg == null || _dismissedThisAlertCycle || _isSnoozed) {
-      return const SliverToBoxAdapter(child: SizedBox.shrink());
-    }
+    final bool showBanner = _lastAlertMsg != null && !_dismissedThisAlertCycle && !_isSnoozed;
+
+    return SliverToBoxAdapter(
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeInOut,
+        alignment: Alignment.topCenter,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          switchInCurve: Curves.easeOut,
+          switchOutCurve: Curves.easeIn,
+          transitionBuilder: (child, animation) {
+            return FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, -0.15),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            );
+          },
+          child: showBanner
+              ? Padding(
+                  key: const ValueKey('alert_banner'),
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.4), width: 1.5),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFEF4444).withValues(alpha: 0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        )
+                      ],
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.warning_amber_rounded, color: Color(0xFFEF4444), size: 28),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "Safety System Warning",
+                                style: GoogleFonts.outfit(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFFEF4444),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _lastAlertMsg!,
+                                style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 16,
+                                runSpacing: 4,
+                                children: [
+                                  TextButton(
+                                    onPressed: () {
+                                      HapticFeedback.mediumImpact();
+                                      setState(() {
+                                        _dismissedThisAlertCycle = true;
+                                      });
+                                    },
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: Colors.white70,
+                                      padding: EdgeInsets.zero,
+                                      minimumSize: const Size(50, 30),
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    child: const Text("Dismiss", style: TextStyle(fontSize: 12, decoration: TextDecoration.underline)),
+                                  ),
+                                  TextButton(
+                                    onPressed: () {
+                                      HapticFeedback.heavyImpact();
+                                      setState(() {
+                                        _snoozeAlertsUntil = DateTime.now().add(const Duration(minutes: 5));
+                                      });
+                                    },
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: Colors.white70,
+                                      padding: EdgeInsets.zero,
+                                      minimumSize: const Size(50, 30),
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    child: const Text("Snooze (5m)", style: TextStyle(fontSize: 12, decoration: TextDecoration.underline)),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : const SizedBox(
+                  key: ValueKey('alert_empty'),
+                  width: double.infinity,
+                  height: 0,
+                ),
+        ),
+      ),
+    );
+  }
+
+  /// Snooze indicator banner
+  Widget _buildSnoozeBanner() {
+    final remaining = _snoozeAlertsUntil?.difference(DateTime.now());
+    final minutesLeft = remaining?.inMinutes ?? 0;
+    final secondsLeft = remaining?.inSeconds.remainder(60) ?? 0;
 
     return SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
         child: Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            color: const Color(0xFFEF4444).withOpacity(0.15),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFFEF4444).withOpacity(0.4), width: 1.5),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFEF4444).withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              )
-            ],
+            color: const Color(0xFFFBBF24).withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFFBBF24).withValues(alpha: 0.3), width: 1.0),
           ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.warning_amber_rounded, color: Color(0xFFEF4444), size: 28),
+              const Icon(Icons.snooze_rounded, color: Color(0xFFFBBF24), size: 22),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Safety System Warning",
-                      style: GoogleFonts.outfit(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: const Color(0xFFEF4444),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _lastAlertMsg!,
-                      style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 16,
-                      runSpacing: 4,
-                      children: [
-                        TextButton(
-                          onPressed: () {
-                            setState(() {
-                              _dismissedThisAlertCycle = true;
-                            });
-                          },
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.white70,
-                            padding: EdgeInsets.zero,
-                            minimumSize: const Size(50, 30),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: const Text("Dismiss", style: TextStyle(fontSize: 12, decoration: TextDecoration.underline)),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            setState(() {
-                              _snoozeAlertsUntil = DateTime.now().add(const Duration(minutes: 5));
-                            });
-                          },
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.white70,
-                            padding: EdgeInsets.zero,
-                            minimumSize: const Size(50, 30),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: const Text("Snooze (5m)", style: TextStyle(fontSize: 12, decoration: TextDecoration.underline)),
-                        ),
-                      ],
-                    ),
-                  ],
+                child: Text(
+                  "Alerts snoozed · Resume in ${minutesLeft}m ${secondsLeft.toString().padLeft(2, '0')}s",
+                  style: GoogleFonts.outfit(
+                    fontSize: 13,
+                    color: const Color(0xFFFBBF24),
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
+              ),
+              TextButton(
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  setState(() {
+                    _snoozeAlertsUntil = null;
+                  });
+                },
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFFFBBF24),
+                  padding: EdgeInsets.zero,
+                  minimumSize: const Size(50, 30),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text("Resume", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -765,30 +940,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildCountdownTimerSection() {
     final String secondsStr = _countdownSeconds.toString().padLeft(2, '0');
+    final double progress = _countdownSeconds / 30.0;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
         color: const Color(0xFF1E2135),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: const Color(0xFF00E5FF).withOpacity(0.15),
+          color: const Color(0xFF00E5FF).withValues(alpha: 0.15),
           width: 1.0,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF00E5FF).withOpacity(0.02),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          )
-        ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(
-            Icons.sync_rounded,
-            color: Color(0xFF00E5FF),
-            size: 18,
+          SizedBox(
+            width: 26,
+            height: 26,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                CircularProgressIndicator(
+                  value: progress,
+                  strokeWidth: 2.5,
+                  backgroundColor: Colors.white12,
+                  valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF00E5FF)),
+                ),
+                Center(
+                  child: Icon(
+                    Icons.sync_rounded,
+                    color: const Color(0xFF00E5FF),
+                    size: 14,
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(width: 10),
           Text(
@@ -905,13 +1091,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         color: const Color(0xFF1E2135),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: copWarning ? const Color(0xFFEF4444).withOpacity(0.5) : Colors.white10, 
+          color: copWarning ? const Color(0xFFEF4444).withValues(alpha: 0.5) : Colors.white10, 
           width: 1.2
         ),
         boxShadow: [
           if (copWarning)
             BoxShadow(
-              color: const Color(0xFFEF4444).withOpacity(0.1),
+              color: const Color(0xFFEF4444).withValues(alpha: 0.1),
               blurRadius: 12,
               spreadRadius: 2,
             )
@@ -939,7 +1125,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: copGlowColor.withOpacity(0.15),
+                    color: copGlowColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -1008,7 +1194,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             width: 60,
                             height: 8,
                             decoration: BoxDecoration(
-                              color: const Color(0xFF10B981).withOpacity(0.3),
+                              color: const Color(0xFF10B981).withValues(alpha: 0.3),
                               borderRadius: BorderRadius.circular(4),
                             ),
                           ),
@@ -1025,7 +1211,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
-                                  color: copGlowColor.withOpacity(0.6),
+                                  color: copGlowColor.withValues(alpha: 0.6),
                                   blurRadius: 8,
                                   spreadRadius: 3,
                                 )
@@ -1042,7 +1228,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         Expanded(
                           child: Text(
                             "Medial", 
-                            style: const TextStyle(fontSize: 9, color: Colors.white38),
+                            style: const TextStyle(fontSize: 11, color: Colors.white38),
                             textAlign: TextAlign.left,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -1051,7 +1237,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         Expanded(
                           child: Text(
                             "Center", 
-                            style: const TextStyle(fontSize: 9, color: Colors.white38),
+                            style: const TextStyle(fontSize: 11, color: Colors.white38),
                             textAlign: TextAlign.center,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -1060,7 +1246,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         Expanded(
                           child: Text(
                             "Lateral", 
-                            style: const TextStyle(fontSize: 9, color: Colors.white38),
+                            style: const TextStyle(fontSize: 11, color: Colors.white38),
                             textAlign: TextAlign.right,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -1089,7 +1275,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     // Color based on force level (calibrated in Newtons)
     Color getForceColor(double force) {
-      if (force < 5.0) return const Color(0xFF00FFC2).withOpacity(0.3); // Safe/low pressure
+      if (force < 5.0) return const Color(0xFF00FFC2).withValues(alpha: 0.3); // Safe/low pressure
       if (force < 45.0) return const Color(0xFF8B5CF6); // Moderate pressure
       return const Color(0xFFEF4444); // High/danger pressure
     }
@@ -1106,62 +1292,68 @@ class _DashboardScreenState extends State<DashboardScreen> {
         alignment: Alignment.center,
         children: [
           // Foot outline graphic overlay
-          Opacity(
-            opacity: 0.15,
-            child: Icon(Icons.accessibility_new, size: 80, color: Colors.white),
+          CustomPaint(
+            size: const Size(100, 150),
+            painter: _FootSoleOutlinePainter(),
           ),
           
-          // Medial FSR1 Zone (Left position on display representing medial side of foot sole)
+          // FSR1 Anterior Zone (Top — tarsals / forefoot)
           Positioned(
-            left: 15,
-            top: 40,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 100),
-              width: fsr1Size,
-              height: fsr1Size,
-              decoration: BoxDecoration(
-                color: getForceColor(force1),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: getForceColor(force1).withOpacity(0.5),
-                    blurRadius: 10,
-                    spreadRadius: 2,
-                  )
-                ],
-              ),
-              child: Center(
-                child: Text(
-                  "${force1.toStringAsFixed(0)}",
-                  style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
+            left: 0,
+            right: 0,
+            top: 12,
+            child: Center(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 100),
+                width: fsr1Size,
+                height: fsr1Size,
+                decoration: BoxDecoration(
+                  color: getForceColor(force1),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: getForceColor(force1).withValues(alpha: 0.5),
+                      blurRadius: 10,
+                      spreadRadius: 2,
+                    )
+                  ],
+                ),
+                child: Center(
+                  child: Text(
+                    force1.toStringAsFixed(0),
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
                 ),
               ),
             ),
           ),
           
-          // Lateral FSR2 Zone (Right position on display representing lateral side of foot sole)
+          // FSR2 Posterior Zone (Bottom — heel)
           Positioned(
-            right: 15,
-            top: 40,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 100),
-              width: fsr2Size,
-              height: fsr2Size,
-              decoration: BoxDecoration(
-                color: getForceColor(force2),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: getForceColor(force2).withOpacity(0.5),
-                    blurRadius: 10,
-                    spreadRadius: 2,
-                  )
-                ],
-              ),
-              child: Center(
-                child: Text(
-                  "${force2.toStringAsFixed(0)}",
-                  style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
+            left: 0,
+            right: 0,
+            bottom: 28,
+            child: Center(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 100),
+                width: fsr2Size,
+                height: fsr2Size,
+                decoration: BoxDecoration(
+                  color: getForceColor(force2),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: getForceColor(force2).withValues(alpha: 0.5),
+                      blurRadius: 10,
+                      spreadRadius: 2,
+                    )
+                  ],
+                ),
+                child: Center(
+                  child: Text(
+                    force2.toStringAsFixed(0),
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
                 ),
               ),
             ),
@@ -1188,8 +1380,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Positioned(
             bottom: 12,
             child: Text(
-              "Plantar Sole",
-              style: TextStyle(color: Colors.white30, fontSize: 10, fontWeight: FontWeight.w500),
+              "Posterior (Heel)",
+              style: TextStyle(color: Colors.white30, fontSize: 9, fontWeight: FontWeight.w500),
+            ),
+          ),
+          
+          Positioned(
+            top: 4,
+            child: Text(
+              "Anterior (Tarsals)",
+              style: TextStyle(color: Colors.white30, fontSize: 9, fontWeight: FontWeight.w500),
             ),
           )
         ],
@@ -1227,7 +1427,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
               BarChartData(
                 alignment: BarChartAlignment.spaceAround,
                 maxY: 100,
-                barTouchData: BarTouchData(enabled: false),
+                barTouchData: BarTouchData(
+                  enabled: true,
+                  touchTooltipData: BarTouchTooltipData(
+                    getTooltipColor: (_) => const Color(0xFF2A2D40),
+                    getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                      return BarTooltipItem(
+                        '${rod.toY.toStringAsFixed(1)} N',
+                        const TextStyle(color: Color(0xFF00E5FF), fontWeight: FontWeight.bold, fontSize: 13),
+                      );
+                    },
+                  ),
+                ),
                 titlesData: FlTitlesData(
                   show: true,
                   bottomTitles: AxisTitles(
@@ -1237,8 +1448,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       getTitlesWidget: (value, meta) {
                         double forceNewton = value == 0 ? force1 : force2;
                         String name = value == 0 
-                            ? "FSR 1 (Medial)\n${forceNewton.toStringAsFixed(1)} N" 
-                            : "FSR 2 (Lateral)\n${forceNewton.toStringAsFixed(1)} N";
+                            ? "FSR 1 (Anterior)\n${forceNewton.toStringAsFixed(1)} N" 
+                            : "FSR 2 (Posterior)\n${forceNewton.toStringAsFixed(1)} N";
                         return Padding(
                           padding: const EdgeInsets.only(top: 8.0),
                           child: Text(
@@ -1258,7 +1469,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         if (value % 25 == 0) {
                           return Text(
                             "${value.toInt()} N",
-                            style: const TextStyle(color: Colors.white30, fontSize: 10),
+                            style: const TextStyle(color: Colors.white30, fontSize: 11),
                           );
                         }
                         return const SizedBox.shrink();
@@ -1308,6 +1519,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ],
               ),
+              duration: const Duration(milliseconds: 600),
+              curve: Curves.easeInOut,
             ),
           ),
         ],
@@ -1332,13 +1545,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         gradient: gradient,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: glowingBorder ? indicatorColor.withOpacity(0.5) : Colors.white10,
+          color: glowingBorder ? indicatorColor.withValues(alpha: 0.5) : Colors.white10,
           width: glowingBorder ? 1.5 : 1.0,
         ),
         boxShadow: [
           if (glowingBorder)
             BoxShadow(
-              color: indicatorColor.withOpacity(0.08),
+              color: indicatorColor.withValues(alpha: 0.08),
               blurRadius: 10,
               spreadRadius: 1,
             )
@@ -1356,13 +1569,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                   decoration: BoxDecoration(
-                    color: indicatorColor.withOpacity(0.12),
+                    color: indicatorColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
                     indicatorText.toUpperCase(),
                     style: GoogleFonts.outfit(
-                      fontSize: 8,
+                      fontSize: 10,
                       color: indicatorColor,
                       fontWeight: FontWeight.bold,
                     ),
@@ -1392,4 +1605,51 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
+}
+
+/// Custom painter for a subtle foot sole outline
+class _FootSoleOutlinePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.08)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    final path = Path();
+    final w = size.width;
+    final h = size.height;
+
+    // Draw a simplified foot sole outline
+    // Heel area
+    path.moveTo(w * 0.35, h * 0.88);
+    path.quadraticBezierTo(w * 0.3, h * 0.92, w * 0.35, h * 0.95);
+    path.quadraticBezierTo(w * 0.5, h * 0.97, w * 0.65, h * 0.95);
+    path.quadraticBezierTo(w * 0.7, h * 0.92, w * 0.65, h * 0.88);
+    // Arch
+    path.quadraticBezierTo(w * 0.55, h * 0.7, w * 0.5, h * 0.55);
+    // Forefoot
+    path.quadraticBezierTo(w * 0.55, h * 0.35, w * 0.72, h * 0.2);
+    // Toe area
+    path.quadraticBezierTo(w * 0.78, h * 0.12, w * 0.65, h * 0.1);
+    path.quadraticBezierTo(w * 0.45, h * 0.08, w * 0.28, h * 0.2);
+    path.quadraticBezierTo(w * 0.22, h * 0.35, w * 0.3, h * 0.55);
+    path.close();
+
+    canvas.drawPath(path, paint);
+
+    // Draw center line for visual reference
+    final centerPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.04)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.5;
+    canvas.drawLine(
+      Offset(w * 0.5, h * 0.1),
+      Offset(w * 0.5, h * 0.95),
+      centerPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
