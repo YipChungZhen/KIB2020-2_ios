@@ -306,6 +306,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   String _deepSeekApiKey = "sk-1b8twdHxlAIbZi70CF70IG7s2stG13jWoikbQczRHKK53rrj";
   bool _isSimulationMode = false;
   bool _developerSettingsExpanded = false;
+  bool _isWifiPermissionGranted = false;
   
   // AI Generation State
   String? _aiResponseText;
@@ -365,6 +366,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
       _isAiConsented = prefs.getBool('isAiConsented') ?? false;
       _deepSeekApiKey = "sk-1b8twdHxlAIbZi70CF70IG7s2stG13jWoikbQczRHKK53rrj";
       _isSimulationMode = prefs.getBool('isSimulationMode') ?? false;
+      _isWifiPermissionGranted = prefs.getBool('isWifiPermissionGranted') ?? false;
     });
   }
 
@@ -376,8 +378,87 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     });
   }
 
+  Future<void> _saveWifiPermission(bool granted) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isWifiPermissionGranted', granted);
+    setState(() {
+      _isWifiPermissionGranted = granted;
+    });
+  }
+
+  void _showWifiPermissionDialog({VoidCallback? onAllowed, VoidCallback? onDenied}) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1E2135),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(
+            "WiFi & Network Consent",
+            style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+          content: Text(
+            "AFO SmartLink needs your permission to use WiFi or Mobile Data connection on your device to transmit anonymized gait metrics to the DeepSeek cloud service. Do you allow this network usage?",
+            style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13, height: 1.5),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _saveWifiPermission(false);
+                if (onDenied != null) onDenied();
+              },
+              child: const Text(
+                "Decline",
+                style: TextStyle(color: Colors.white54),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _saveWifiPermission(true);
+                if (onAllowed != null) onAllowed();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00E5FF),
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text(
+                "Allow",
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   Future<void> _saveSimulationMode(bool isSim) async {
+    if (!isSim && _isAiConsented && !_isWifiPermissionGranted) {
+      _showWifiPermissionDialog(
+        onAllowed: () async {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool('isSimulationMode', false);
+          setState(() {
+            _isSimulationMode = false;
+          });
+        },
+        onDenied: () {
+          // Revert or stay in simulation mode
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("WiFi permission declined. Reverting to Local LLM mode."),
+              backgroundColor: Color(0xFF1E2135),
+            ),
+          );
+        },
+      );
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('isSimulationMode', isSim);
     setState(() {
@@ -440,6 +521,14 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
               onPressed: () {
                 Navigator.of(context).pop();
                 _saveConsent(true);
+                // Check if they also need to consent to WiFi since default is Deepseek AI (online mode)
+                if (!_isSimulationMode && !_isWifiPermissionGranted) {
+                  _showWifiPermissionDialog(
+                    onDenied: () {
+                      _saveSimulationMode(true); // fall back to Local LLM if network denied
+                    },
+                  );
+                }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF00E5FF),
@@ -2069,6 +2158,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                         child: TextButton(
                           onPressed: () {
                             _saveConsent(false);
+                            _saveWifiPermission(false);
+                            _saveSimulationMode(true);
                           },
                           style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
                           child: const Text("Revoke AI Consent", style: TextStyle(fontSize: 12, decoration: TextDecoration.underline)),
