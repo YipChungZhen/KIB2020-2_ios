@@ -303,7 +303,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
 
   // AI Settings State
   bool _isAiConsented = false;
-  String _deepSeekApiKey = "sk-1b8twdHxlAIbZi70CF70IG7s2stG13jWoikbQczRHKK53rrj";
+  String _deepSeekApiKey = "sk-352248d215c5440b84e7f7263cfede53";
   bool _isSimulationMode = false;
   bool _developerSettingsExpanded = false;
   bool _isWifiPermissionGranted = false;
@@ -364,7 +364,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _isAiConsented = prefs.getBool('isAiConsented') ?? false;
-      _deepSeekApiKey = "sk-1b8twdHxlAIbZi70CF70IG7s2stG13jWoikbQczRHKK53rrj";
+      _deepSeekApiKey = "sk-352248d215c5440b84e7f7263cfede53";
       _isSimulationMode = prefs.getBool('isSimulationMode') ?? false;
       _isWifiPermissionGranted = prefs.getBool('isWifiPermissionGranted') ?? false;
     });
