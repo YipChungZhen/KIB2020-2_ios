@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
@@ -79,7 +78,7 @@ class BleService {
     _scanResultsSub = FlutterBluePlus.scanResults.listen((results) {
       scanResults.value = results.where((r) {
         final name = r.device.platformName.toLowerCase();
-        return name.contains("smart-afo") || name.contains("orthosis") || r.advertisementData.localName.toLowerCase().contains("smart-afo");
+        return name.contains("smart-afo") || name.contains("orthosis") || r.advertisementData.advName.toLowerCase().contains("smart-afo");
       }).toList();
     });
   }

@@ -5,7 +5,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:video_player/video_player.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'ble_service.dart';
+import 'ai_service.dart';
 
 
 void main() async {
@@ -299,6 +301,20 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
 
+  // AI Settings State
+  bool _isAiConsented = false;
+  String _deepSeekApiKey = "";
+  bool _isSimulationMode = true;
+  bool _developerSettingsExpanded = false;
+  
+  // AI Generation State
+  String? _aiResponseText;
+  bool _isAiLoading = false;
+  String? _aiError;
+  
+  final TextEditingController _apiKeyController = TextEditingController();
+  bool _showApiKeyText = false;
+
   double _calculateForceNewton(int adc) {
     if (adc >= 1022) return 0.0; // no force applied
     int normalizedAdc = adc <= 1 ? 1 : adc;
@@ -333,6 +349,9 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     // Listener to check thresholds and trigger visual warning changes
     _ble.telemetry.addListener(_checkThresholds);
     _startCountdownTimer();
+
+    // Load persisted AI preferences
+    _loadPrefs();
   }
 
   @override
@@ -340,7 +359,157 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     _ble.telemetry.removeListener(_checkThresholds);
     _countdownTimer?.cancel();
     _pulseController.dispose();
+    _apiKeyController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _isAiConsented = prefs.getBool('isAiConsented') ?? false;
+      _deepSeekApiKey = prefs.getString('deepSeekApiKey') ?? "";
+      _isSimulationMode = prefs.getBool('isSimulationMode') ?? true;
+      _apiKeyController.text = _deepSeekApiKey;
+    });
+  }
+
+  Future<void> _saveConsent(bool consented) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isAiConsented', consented);
+    setState(() {
+      _isAiConsented = consented;
+    });
+  }
+
+  Future<void> _saveApiKey(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('deepSeekApiKey', key);
+    setState(() {
+      _deepSeekApiKey = key;
+    });
+  }
+
+  Future<void> _saveSimulationMode(bool isSim) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isSimulationMode', isSim);
+    setState(() {
+      _isSimulationMode = isSim;
+    });
+  }
+
+  void _showConsentDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1E2135),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(
+            "AI Gait Insights Consent",
+            style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                RichText(
+                  text: TextSpan(
+                    style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13, height: 1.5),
+                    children: const [
+                      TextSpan(
+                        text: "To generate personalized insights about your gait and foot microclimate, this app uses an artificial intelligence (AI) assistant.\n\n"
+                            "By clicking \"I Agree,\" you consent to securely sending your current, anonymized sensor readings (plantar pressure distribution, temperature, and humidity) to a cloud-based AI service for processing. No personally identifiable information (such as your name or location) is transmitted.\n\n",
+                      ),
+                      TextSpan(
+                        text: "Important Medical Disclaimer:\n",
+                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                      TextSpan(
+                        text: "The AI Analysis feature provides informational summaries only. It is not a diagnostic tool, and its outputs do not constitute medical advice. AI systems can make mistakes. Always consult your biomedical engineer, physical therapist, or physician before making changes to your orthosis, walking habits, or medical treatment.",
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actionsAlignment: MainAxisAlignment.spaceBetween,
+          actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _saveConsent(false);
+              },
+              child: const Text(
+                "Decline & Continue Offline",
+                style: TextStyle(color: Colors.white54, fontSize: 11),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _saveConsent(true);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00E5FF),
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text(
+                "I Agree",
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _runAiAnalysis(AfoTelemetry data) async {
+    setState(() {
+      _isAiLoading = true;
+      _aiResponseText = null;
+      _aiError = null;
+    });
+
+    try {
+      final double fsr1N = _calculateForceNewton(data.fsr1);
+      final double fsr2N = _calculateForceNewton(data.fsr2);
+      
+      String result;
+      if (_isSimulationMode) {
+        result = await AiService.simulateAnalysis(
+          fsr1Newtons: fsr1N,
+          fsr2Newtons: fsr2N,
+          temp: data.temperature,
+          humidity: data.humidity,
+          cop: data.cop,
+        );
+      } else {
+        result = await AiService.analyzeGait(
+          apiKey: _deepSeekApiKey,
+          fsr1Newtons: fsr1N,
+          fsr2Newtons: fsr2N,
+          temp: data.temperature,
+          humidity: data.humidity,
+          cop: data.cop,
+        );
+      }
+
+      setState(() {
+        _aiResponseText = result;
+        _isAiLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _aiError = e.toString().replaceFirst("Exception: ", "");
+        _isAiLoading = false;
+      });
+    }
   }
 
   void _startCountdownTimer() {
@@ -1023,6 +1192,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
               _buildBalanceAnalyticsSection(data),
               const SizedBox(height: 20),
               _buildForceGraphSection(data),
+              const SizedBox(height: 20),
+              _buildAiAnalysisSection(data),
               const SizedBox(height: 30),
             ]),
           ),
@@ -1599,6 +1770,357 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
               color: Colors.white,
               fontSize: 24,
               fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAiAnalysisSection(AfoTelemetry data) {
+    if (!_isAiConsented) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E2135),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.white10, width: 1.0),
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF00E5FF).withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.psychology_outlined, color: Color(0xFF00E5FF), size: 24),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  "AI Gait Insights",
+                  style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              "Get dynamic biomechanical analysis and foot microclimate safety warnings using DeepSeek V4Pro AI.",
+              style: TextStyle(color: Colors.white54, fontSize: 13, height: 1.4),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _showConsentDialog,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF8B5CF6),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+              child: const Text("Unlock AI Analysis", style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E2135),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: _aiError != null 
+              ? const Color(0xFFEF4444).withValues(alpha: 0.4) 
+              : Colors.white10, 
+          width: 1.0
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF00E5FF).withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.psychology_outlined, color: Color(0xFF00E5FF), size: 24),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    "AI Gait Analysis Service",
+                    style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ],
+              ),
+              if (_isSimulationMode)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFBBF24).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    "SIMULATION MODE",
+                    style: GoogleFonts.outfit(fontSize: 9, color: const Color(0xFFFBBF24), fontWeight: FontWeight.bold),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          
+          if (_isAiLoading)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24.0),
+                child: Column(
+                  children: [
+                    const CircularProgressIndicator(color: Color(0xFF00E5FF)),
+                    const SizedBox(height: 16),
+                    Text(
+                      _isSimulationMode ? "Generating simulation analysis..." : "Consulting DeepSeek V4Pro AI...",
+                      style: const TextStyle(color: Colors.white54, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else ...[
+            if (_aiResponseText != null) ...[
+              // Disclaimer Box at Top of response
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.3), width: 1.0),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.info_outline, color: Color(0xFFEF4444), size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "This is an informational Output but not official medical advice under Malaysian Medical Device Act 2012. AI can make mistakes.",
+                        style: GoogleFonts.outfit(color: const Color(0xFFFCA5A5), fontSize: 11, height: 1.4, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Response Content
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.black12,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white10, width: 1.0),
+                ),
+                child: Text(
+                  _aiResponseText!,
+                  style: GoogleFonts.outfit(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    fontSize: 14,
+                    height: 1.5,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+            
+            if (_aiError != null) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.4), width: 1.0),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Color(0xFFEF4444), size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _aiError!,
+                        style: const TextStyle(color: Color(0xFFFCA5A5), fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            
+            // Action Button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => _runAiAnalysis(data),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00E5FF),
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: Text(
+                  _aiResponseText == null ? "Analyze Gait Data" : "Re-Analyze Gait Data",
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+              ),
+            ),
+          ],
+          
+          const SizedBox(height: 20),
+          const Divider(color: Colors.white10, height: 1),
+          const SizedBox(height: 12),
+          
+          // Collapsible Developer Settings
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              title: Text(
+                "Developer Settings",
+                style: GoogleFonts.outfit(fontSize: 13, color: Colors.white54, fontWeight: FontWeight.bold),
+              ),
+              trailing: Icon(
+                _developerSettingsExpanded ? Icons.expand_less : Icons.expand_more,
+                color: Colors.white38,
+                size: 18,
+              ),
+              onExpansionChanged: (expanded) {
+                setState(() {
+                  _developerSettingsExpanded = expanded;
+                });
+              },
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Mode Selector Row
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            "Simulated Demo Mode",
+                            style: TextStyle(color: Colors.white70, fontSize: 13),
+                          ),
+                          Switch(
+                            value: _isSimulationMode,
+                            activeThumbColor: const Color(0xFF00E5FF),
+                            onChanged: (val) {
+                              _saveSimulationMode(val);
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      
+                      // API Key Field (Only active/visible if simulation mode is off)
+                      if (!_isSimulationMode) ...[
+                        Text(
+                          "DeepSeek V4Pro API Key",
+                          style: GoogleFonts.outfit(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w500),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _apiKeyController,
+                                obscureText: !_showApiKeyText,
+                                style: const TextStyle(color: Colors.white, fontSize: 13),
+                                decoration: InputDecoration(
+                                  filled: true,
+                                  fillColor: Colors.black26,
+                                  hintText: "sk-...",
+                                  hintStyle: const TextStyle(color: Colors.white24),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: const BorderSide(color: Colors.white10),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: const BorderSide(color: Color(0xFF00E5FF)),
+                                  ),
+                                  suffixIcon: IconButton(
+                                    icon: Icon(
+                                      _showApiKeyText ? Icons.visibility : Icons.visibility_off,
+                                      color: Colors.white38,
+                                      size: 18,
+                                    ),
+                                    onPressed: () {
+                                      setState(() {
+                                        _showApiKeyText = !_showApiKeyText;
+                                      });
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            ElevatedButton(
+                              onPressed: () {
+                                _saveApiKey(_apiKeyController.text);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text("DeepSeek API Key saved locally."),
+                                    backgroundColor: Color(0xFF1E2135),
+                                  ),
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF8B5CF6),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                              ),
+                              child: const Text("Save", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          "Your key is encrypted and stored locally. Get a free API key by visiting DeepSeek's console.",
+                          style: TextStyle(color: Colors.white24, fontSize: 10, height: 1.3),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      
+                      // Revoke Consent Option
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () {
+                            _saveConsent(false);
+                          },
+                          style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                          child: const Text("Revoke AI Consent", style: TextStyle(fontSize: 12, decoration: TextDecoration.underline)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ],

@@ -13,6 +13,8 @@ dependencies:
   fl_chart: ^1.2.0
   google_fonts: ^8.1.0
   video_player: ^2.8.2
+  http: ^1.2.0
+  shared_preferences: ^2.2.3
 
 dev_dependencies:
   flutter_test:
