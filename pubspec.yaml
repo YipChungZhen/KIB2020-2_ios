@@ -33,3 +33,7 @@ flutter:
   assets:
     - assets/app_icon.jpg
     - assets/antigravity_logo.webm
+    - assets/splash_logo.webm
+    - assets/deepseek_logo.png
+    - assets/splash_branding.mp4
+    - assets/bt_disconnected.jpeg

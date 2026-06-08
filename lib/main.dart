@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -95,7 +96,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     );
 
     // Initialize Video Player Controller
-    _videoController = VideoPlayerController.asset('assets/antigravity_logo.webm')
+    _videoController = VideoPlayerController.asset('assets/splash_branding.mp4')
       ..initialize().then((_) {
         if (mounted) {
           setState(() {});
@@ -142,9 +143,15 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF0A0D18), Color(0xFF13172E)],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF1D0B2E), // Deep purple fade
+              Color(0xFF0A1024), // Deep blue fade
+              Colors.black,      // Solid black
+              Colors.black,
+            ],
+            stops: [0.0, 0.4, 0.75, 1.0],
           ),
         ),
         child: Stack(
@@ -253,7 +260,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                           letterSpacing: 1.0,
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 2),
                       _videoController.value.isInitialized
                           ? SizedBox(
                               width: 200,
@@ -262,7 +269,16 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                                 child: VideoPlayer(_videoController),
                               ),
                             )
-                          : const SizedBox(height: 40),
+                          : const SizedBox(
+                              width: 200,
+                              height: 40,
+                              child: Center(
+                                child: Text(
+                                  "Loading…",
+                                  style: TextStyle(color: Colors.white24, fontSize: 12),
+                                ),
+                              ),
+                            ),
                     ],
                   ),
                 ),
@@ -285,6 +301,8 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProviderStateMixin {
   final BleService _ble = BleService.instance;
   
+  int _selectedIndex = 0;
+
   // Alert Snooze Timestamp
   DateTime? _snoozeAlertsUntil;
   bool _dismissedThisAlertCycle = false;
@@ -304,7 +322,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   // AI Settings State
   bool _isAiConsented = false;
   String _deepSeekApiKey = "sk-352248d215c5440b84e7f7263cfede53";
-  bool _isSimulationMode = false;
+  bool _isSimulationMode = true;
   bool _developerSettingsExpanded = false;
   bool _isWifiPermissionGranted = false;
   
@@ -365,7 +383,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     setState(() {
       _isAiConsented = prefs.getBool('isAiConsented') ?? false;
       _deepSeekApiKey = "sk-352248d215c5440b84e7f7263cfede53";
-      _isSimulationMode = prefs.getBool('isSimulationMode') ?? false;
+      _isSimulationMode = prefs.getBool('isSimulationMode') ?? true;
       _isWifiPermissionGranted = prefs.getBool('isWifiPermissionGranted') ?? false;
     });
   }
@@ -514,7 +532,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
               },
               child: const Text(
                 "Decline & Continue Offline",
-                style: TextStyle(color: Colors.white54, fontSize: 11),
+                style: TextStyle(color: Colors.white54, fontSize: 12),
               ),
             ),
             ElevatedButton(
@@ -657,6 +675,38 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF0F111E),
+      bottomNavigationBar: ValueListenableBuilder<AfoConnectionState>(
+        valueListenable: _ble.connectionState,
+        builder: (context, connState, _) {
+          if (connState != AfoConnectionState.connected) return const SizedBox.shrink();
+          return NavigationBar(
+            backgroundColor: const Color(0xFF13172E),
+            indicatorColor: const Color(0xFF00E5FF).withValues(alpha: 0.2),
+            selectedIndex: _selectedIndex,
+            onDestinationSelected: (idx) {
+              setState(() => _selectedIndex = idx);
+            },
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.dashboard_outlined), 
+                selectedIcon: Icon(Icons.dashboard, color: Color(0xFF00E5FF)), 
+                label: 'Dashboard'
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.analytics_outlined), 
+                selectedIcon: Icon(Icons.analytics, color: Color(0xFF00E5FF)), 
+                label: 'Analytics'
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.psychology_outlined), 
+                selectedIcon: Icon(Icons.psychology, color: Color(0xFF00E5FF)), 
+                label: 'Insights'
+              ),
+            ],
+          );
+        },
+      ),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -677,6 +727,12 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                   
                   if (!isConnected) ...[
                     _buildScannerPrompt(connState),
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 40),
+                        child: Divider(color: Colors.white10, height: 1, thickness: 1),
+                      ),
+                    ),
                     _buildDeviceList(),
                   ] else ...[
                     _buildActiveAlertBanner(),
@@ -776,86 +832,48 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
             ),
             const SizedBox(width: 12),
             if (connState == AfoConnectionState.connected)
-              Flexible(
-                child: OutlinedButton(
+              Tooltip(
+                message: "Disconnect",
+                child: IconButton(
                   onPressed: () => _ble.disconnect(),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.redAccent,
-                    side: const BorderSide(color: Colors.redAccent, width: 1.2),
+                  icon: const Icon(Icons.bluetooth_disabled, color: Colors.redAccent, size: 22),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.redAccent.withValues(alpha: 0.15),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.bluetooth_disabled, size: 14),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          "Disconnect",
-                          style: const TextStyle(fontSize: 12),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
-                      ),
-                    ],
                   ),
                 ),
               )
             else if (!isScanning)
-              Flexible(
-                child: ElevatedButton(
+              Tooltip(
+                message: "Scan Devices",
+                child: IconButton(
                   onPressed: () => _ble.startScan(),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF8B5CF6),
-                    foregroundColor: Colors.white,
+                  icon: const Icon(Icons.bluetooth_searching, color: Color(0xFF8B5CF6), size: 22),
+                  style: IconButton.styleFrom(
+                    backgroundColor: const Color(0xFF8B5CF6).withValues(alpha: 0.2),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    elevation: 4,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.search, size: 16),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          "Scan Devices",
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
-                      ),
-                    ],
                   ),
                 ),
               )
             else
-              Flexible(
-                child: TextButton(
+              Tooltip(
+                message: "Stop Scan",
+                child: IconButton(
                   onPressed: () => _ble.stopScan(),
-                  style: TextButton.styleFrom(
-                    backgroundColor: Colors.white10,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+                  icon: Stack(
+                    alignment: Alignment.center,
                     children: [
+                      const Icon(Icons.bluetooth_searching, color: Color(0xFFFBBF24), size: 22),
                       const SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      ),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          "Stop Scan",
-                          style: const TextStyle(color: Colors.white70),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
+                        width: 32,
+                        height: 32,
+                        child: CircularProgressIndicator(strokeWidth: 2.5, color: Color(0xFFFBBF24)),
                       ),
                     ],
+                  ),
+                  style: IconButton.styleFrom(
+                    backgroundColor: const Color(0xFFFBBF24).withValues(alpha: 0.12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
               ),
@@ -868,6 +886,25 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   /// Scanner Prompt when not connected
   Widget _buildScannerPrompt(AfoConnectionState connState) {
     bool isScanning = connState == AfoConnectionState.scanning;
+    bool isConnecting = connState == AfoConnectionState.connecting;
+
+    Widget stateIcon;
+    String stateTitle;
+    String stateDesc;
+
+    if (isConnecting) {
+      stateIcon = const Icon(Icons.bluetooth_connected, size: 80, color: Color(0xFF38BDF8));
+      stateTitle = "Pairing with Device...";
+      stateDesc = "Connecting to the telemetry server.";
+    } else if (isScanning) {
+      stateIcon = const Icon(Icons.bluetooth_searching, size: 80, color: Color(0xFF00E5FF));
+      stateTitle = "Looking for Smart AFO...";
+      stateDesc = "Ensure the orthosis microprocessor core is powered on and within range.";
+    } else {
+      stateIcon = const Icon(Icons.bluetooth_disabled, size: 80, color: Colors.grey);
+      stateTitle = "Connect Orthosis Device";
+      stateDesc = "Scan to locate and bind the Bluetooth Low Energy telemetry server.";
+    }
 
     return SliverToBoxAdapter(
       child: Center(
@@ -875,14 +912,10 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
           child: Column(
             children: [
-              Icon(
-                isScanning ? Icons.bluetooth_searching : Icons.bluetooth,
-                size: 80,
-                color: isScanning ? const Color(0xFF00E5FF) : Colors.white24,
-              ),
+              stateIcon,
               const SizedBox(height: 16),
               Text(
-                isScanning ? "Looking for Smart AFO..." : "Connect Orthosis Device",
+                stateTitle,
                 style: GoogleFonts.outfit(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -891,9 +924,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
               ),
               const SizedBox(height: 8),
               Text(
-                isScanning 
-                    ? "Ensure the orthosis microprocessor core is powered on and within range."
-                    : "Scan to locate and bind the Bluetooth Low Energy telemetry server.",
+                stateDesc,
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white54, fontSize: 13),
               ),
@@ -1187,13 +1218,15 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   Widget _buildCountdownTimerSection() {
     final String secondsStr = _countdownSeconds.toString().padLeft(2, '0');
     final double progress = _countdownSeconds / 30.0;
+    final bool isUrgent = _countdownSeconds <= 5;
+    final Color timerColor = isUrgent ? const Color(0xFFFBBF24) : const Color(0xFF00E5FF);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
         color: const Color(0xFF1E2135),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: const Color(0xFF00E5FF).withValues(alpha: 0.15),
+          color: timerColor.withValues(alpha: 0.25),
           width: 1.0,
         ),
       ),
@@ -1210,25 +1243,34 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                   value: progress,
                   strokeWidth: 2.5,
                   backgroundColor: Colors.white12,
-                  valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF00E5FF)),
+                  valueColor: AlwaysStoppedAnimation<Color>(timerColor),
                 ),
-                Center(
-                  child: Icon(
+                if (isUrgent)
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: Icon(
+                      Icons.sync_rounded,
+                      key: ValueKey("urgent_$_countdownSeconds"),
+                      color: timerColor,
+                      size: 14,
+                    ),
+                  )
+                else
+                  Icon(
                     Icons.sync_rounded,
-                    color: const Color(0xFF00E5FF),
+                    color: timerColor,
                     size: 14,
                   ),
-                ),
               ],
             ),
           ),
           const SizedBox(width: 10),
           Text(
-            "Data refreshes at 00:$secondsStr",
+            isUrgent ? "Refreshing soon… 00:$secondsStr" : "Data refreshes at 00:$secondsStr",
             style: GoogleFonts.outfit(
               fontSize: 15,
               fontWeight: FontWeight.bold,
-              color: const Color(0xFF00E5FF),
+              color: timerColor,
               letterSpacing: 0.2,
             ),
           ),
@@ -1237,7 +1279,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     );
   }
 
-  /// Dashboard Metrics Section
+  /// Dashboard Metrics Section (Tabs Content)
   Widget _buildMetricsSection() {
     return ValueListenableBuilder<AfoTelemetry?>(
       valueListenable: _ble.telemetry,
@@ -1262,15 +1304,20 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           padding: const EdgeInsets.symmetric(horizontal: 20),
           sliver: SliverList(
             delegate: SliverChildListDelegate([
-              _buildCountdownTimerSection(),
-              const SizedBox(height: 20),
-              _buildMicroclimateSection(data),
-              const SizedBox(height: 20),
-              _buildBalanceAnalyticsSection(data),
-              const SizedBox(height: 20),
-              _buildForceGraphSection(data),
-              const SizedBox(height: 20),
-              _buildAiAnalysisSection(data),
+              if (_selectedIndex == 0) ...[
+                // Dashboard Tab
+                _buildCountdownTimerSection(),
+                const SizedBox(height: 20),
+                _buildMicroclimateSection(data),
+                const SizedBox(height: 20),
+                _buildBalanceAnalyticsSection(data),
+              ] else if (_selectedIndex == 1) ...[
+                // Analytics Tab
+                _buildForceGraphSection(data),
+              ] else if (_selectedIndex == 2) ...[
+                // AI Insights Tab
+                _buildAiAnalysisSection(data),
+              ],
               const SizedBox(height: 30),
             ]),
           ),
@@ -1333,25 +1380,29 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     bool copWarning = data.cop.abs() > 0.40;
     Color copGlowColor = copWarning ? const Color(0xFFEF4444) : const Color(0xFF00FFC2);
 
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E2135),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: copWarning ? const Color(0xFFEF4444).withValues(alpha: 0.5) : Colors.white10, 
-          width: 1.2
-        ),
-        boxShadow: [
-          if (copWarning)
-            BoxShadow(
-              color: const Color(0xFFEF4444).withValues(alpha: 0.1),
-              blurRadius: 12,
-              spreadRadius: 2,
-            )
-        ],
-      ),
-      child: Column(
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E2135).withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: copWarning ? const Color(0xFFEF4444).withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.05), 
+              width: 1.2
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: copWarning ? const Color(0xFFEF4444).withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.2),
+                blurRadius: copWarning ? 12 : 8,
+                spreadRadius: copWarning ? 2 : 0,
+                offset: const Offset(0, 4),
+              )
+            ],
+          ),
+          child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -1361,7 +1412,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                 child: Text(
                   "Center of Pressure (COP) Balance",
                   style: GoogleFonts.outfit(
-                    fontSize: 16,
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
                   ),
@@ -1394,6 +1445,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           
           // Foot Heatmap Graphic & Sliding COP Track
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // 1. Dynamic Foot Sole Visualizer
               _buildFootSoleVisualizer(data),
@@ -1405,14 +1457,14 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      "Lateral Shift Monitor",
+                      "Anterior–Posterior Balance",
                       style: TextStyle(color: Colors.white54, fontSize: 12),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       data.cop == 0 
                           ? "Perfect Alignment" 
-                          : "${(data.cop.abs() * 100).toStringAsFixed(0)}% Shifted ${data.cop > 0 ? 'Lateral' : 'Medial'}",
+                          : "${(data.cop.abs() * 100).toStringAsFixed(0)}% Shifted ${data.cop > 0 ? 'Anterior' : 'Posterior'}",
                       style: GoogleFonts.outfit(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
@@ -1475,11 +1527,10 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                       children: [
                         Expanded(
                           child: Text(
-                            "Medial", 
+                            "Anterior", 
                             style: const TextStyle(fontSize: 11, color: Colors.white38),
                             textAlign: TextAlign.left,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            softWrap: true,
                           ),
                         ),
                         Expanded(
@@ -1487,17 +1538,15 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                             "Center", 
                             style: const TextStyle(fontSize: 11, color: Colors.white38),
                             textAlign: TextAlign.center,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            softWrap: true,
                           ),
                         ),
                         Expanded(
                           child: Text(
-                            "Lateral", 
+                            "Posterior", 
                             style: const TextStyle(fontSize: 11, color: Colors.white38),
                             textAlign: TextAlign.right,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            softWrap: true,
                           ),
                         ),
                       ],
@@ -1509,7 +1558,9 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           ),
         ],
       ),
-    );
+    ),
+  ),
+);
   }
 
   /// Foot Sole pressure illustration
@@ -1528,120 +1579,124 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
       return const Color(0xFFEF4444); // High/danger pressure
     }
 
-    return Container(
-      width: 100,
-      height: 150,
-      decoration: BoxDecoration(
-        color: Colors.black26,
-        borderRadius: BorderRadius.circular(50),
-        border: Border.all(color: Colors.white10, width: 1.5),
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Foot outline graphic overlay
-          CustomPaint(
-            size: const Size(100, 150),
-            painter: _FootSoleOutlinePainter(),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Anterior label — outside the foot graphic
+        Text(
+          "Anterior",
+          style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          width: 100,
+          height: 150,
+          decoration: BoxDecoration(
+            color: Colors.black26,
+            borderRadius: BorderRadius.circular(50),
+            border: Border.all(color: Colors.white10, width: 1.5),
           ),
-          
-          // FSR1 Anterior Zone (Top — tarsals / forefoot)
-          Positioned(
-            left: 0,
-            right: 0,
-            top: 12,
-            child: Center(
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 100),
-                width: fsr1Size,
-                height: fsr1Size,
-                decoration: BoxDecoration(
-                  color: getForceColor(force1),
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: getForceColor(force1).withValues(alpha: 0.5),
-                      blurRadius: 10,
-                      spreadRadius: 2,
-                    )
-                  ],
-                ),
+          clipBehavior: Clip.hardEdge,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Foot outline graphic overlay
+              CustomPaint(
+                size: const Size(100, 150),
+                painter: _FootSoleOutlinePainter(),
+              ),
+              
+              // FSR1 Anterior Zone (Top — tarsals / forefoot)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 12,
                 child: Center(
-                  child: Text(
-                    force1.toStringAsFixed(0),
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 100),
+                    width: fsr1Size,
+                    height: fsr1Size,
+                    decoration: BoxDecoration(
+                      color: getForceColor(force1),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: getForceColor(force1).withValues(alpha: 0.5),
+                          blurRadius: 10,
+                          spreadRadius: 2,
+                        )
+                      ],
+                    ),
+                    child: Center(
+                      child: Text(
+                        force1.toStringAsFixed(0),
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
-          
-          // FSR2 Posterior Zone (Bottom — heel)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 28,
-            child: Center(
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 100),
-                width: fsr2Size,
-                height: fsr2Size,
-                decoration: BoxDecoration(
-                  color: getForceColor(force2),
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: getForceColor(force2).withValues(alpha: 0.5),
-                      blurRadius: 10,
-                      spreadRadius: 2,
-                    )
-                  ],
-                ),
+              
+              // FSR2 Posterior Zone (Bottom — heel)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 28,
                 child: Center(
-                  child: Text(
-                    force2.toStringAsFixed(0),
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 100),
+                    width: fsr2Size,
+                    height: fsr2Size,
+                    decoration: BoxDecoration(
+                      color: getForceColor(force2),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: getForceColor(force2).withValues(alpha: 0.5),
+                          blurRadius: 10,
+                          spreadRadius: 2,
+                        )
+                      ],
+                    ),
+                    child: Center(
+                      child: Text(
+                        force2.toStringAsFixed(0),
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
-          
-          // Dynamic COP Pointer showing calculated balance on foot sole itself
-          Positioned(
-            top: 45,
-            left: 50 + (data.cop * 20) - 6,
-            child: Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.black, width: 2),
-                boxShadow: const [
-                  BoxShadow(color: Colors.black54, blurRadius: 4, spreadRadius: 1)
-                ],
+              
+              // Dynamic COP Pointer — clamped within the foot outline
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 150),
+                curve: Curves.easeInOut,
+                top: 68, // vertical center between anterior & posterior bubbles
+                left: (50 + (data.cop * 20) - 6).clamp(10.0, 78.0),
+                child: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.black, width: 2),
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black54, blurRadius: 4, spreadRadius: 1)
+                    ],
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
-          
-          Positioned(
-            bottom: 12,
-            child: Text(
-              "Posterior (Heel)",
-              style: TextStyle(color: Colors.white30, fontSize: 9, fontWeight: FontWeight.w500),
-            ),
-          ),
-          
-          Positioned(
-            top: 4,
-            child: Text(
-              "Anterior (Tarsals)",
-              style: TextStyle(color: Colors.white30, fontSize: 9, fontWeight: FontWeight.w500),
-            ),
-          )
-        ],
-      ),
+        ),
+        const SizedBox(height: 4),
+        // Posterior label — outside the foot graphic
+        Text(
+          "Posterior",
+          style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w600),
+        ),
+      ],
     );
   }
 
@@ -1650,21 +1705,32 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     final double force1 = _calculateForceNewton(data.fsr1);
     final double force2 = _calculateForceNewton(data.fsr2);
 
-    return Container(
-      height: 260,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E2135),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white10, width: 1.0),
-      ),
-      child: Column(
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+        child: Container(
+          height: 260,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E2135).withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.05), width: 1.0),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.2),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              )
+            ],
+          ),
+          child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             "Plantar Sensors Force Comparison",
             style: GoogleFonts.outfit(
-              fontSize: 16,
+              fontSize: 18,
               fontWeight: FontWeight.bold,
               color: Colors.white,
             ),
@@ -1731,7 +1797,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                   show: true,
                   drawVerticalLine: false,
                   horizontalInterval: 25,
-                  getDrawingHorizontalLine: (value) => FlLine(color: Colors.white12, strokeWidth: 1),
+                  getDrawingHorizontalLine: (value) => FlLine(color: Colors.white10, strokeWidth: 1, dashArray: [5, 5]),
                 ),
                 borderData: FlBorderData(show: false),
                 barGroups: [
@@ -1741,6 +1807,11 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                       BarChartRodData(
                         toY: force1,
                         width: 50,
+                        backDrawRodData: BackgroundBarChartRodData(
+                          show: true,
+                          toY: 100,
+                          color: Colors.white.withValues(alpha: 0.03),
+                        ),
                         gradient: const LinearGradient(
                           colors: [Color(0xFF8B5CF6), Color(0xFF00FFC2)],
                           begin: Alignment.bottomCenter,
@@ -1756,6 +1827,11 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                       BarChartRodData(
                         toY: force2,
                         width: 50,
+                        backDrawRodData: BackgroundBarChartRodData(
+                          show: true,
+                          toY: 100,
+                          color: Colors.white.withValues(alpha: 0.03),
+                        ),
                         gradient: const LinearGradient(
                           colors: [Color(0xFF8B5CF6), Color(0xFF00E5FF)],
                           begin: Alignment.bottomCenter,
@@ -1773,7 +1849,9 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           ),
         ],
       ),
-    );
+    ),
+  ),
+);
   }
 
   /// Glassmorphic Stat Card template helper
@@ -1787,25 +1865,31 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     required bool glowingBorder,
     required Gradient gradient,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: gradient,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: glowingBorder ? indicatorColor.withValues(alpha: 0.5) : Colors.white10,
-          width: glowingBorder ? 1.5 : 1.0,
-        ),
-        boxShadow: [
-          if (glowingBorder)
-            BoxShadow(
-              color: indicatorColor.withValues(alpha: 0.08),
-              blurRadius: 10,
-              spreadRadius: 1,
-            )
-        ],
-      ),
-      child: Column(
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: gradient,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: glowingBorder ? indicatorColor.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.05),
+              width: glowingBorder ? 1.5 : 1.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: glowingBorder 
+                    ? indicatorColor.withValues(alpha: 0.15) 
+                    : Colors.black.withValues(alpha: 0.2),
+                blurRadius: glowingBorder ? 12 : 8,
+                spreadRadius: glowingBorder ? 2 : 0,
+                offset: const Offset(0, 4),
+              )
+            ],
+          ),
+          child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -1851,34 +1935,58 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           ),
         ],
       ),
-    );
+    ),
+  ),
+);
   }
 
   Widget _buildAiAnalysisSection(AfoTelemetry data) {
     if (!_isAiConsented) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E2135),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.white10, width: 1.0),
-        ),
-        child: Column(
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E2135).withValues(alpha: 0.7),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.05), width: 1.0),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.2),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                )
+              ],
+            ),
+            child: Column(
           children: [
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF00E5FF).withValues(alpha: 0.1),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF8B5CF6), Color(0xFF00E5FF)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
                     shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF8B5CF6).withValues(alpha: 0.3),
+                        blurRadius: 10,
+                        spreadRadius: 1,
+                      )
+                    ],
                   ),
-                  child: const Icon(Icons.psychology_outlined, color: Color(0xFF00E5FF), size: 24),
+                  child: const Icon(Icons.psychology_outlined, color: Colors.white, size: 22),
                 ),
                 const SizedBox(width: 12),
                 Text(
                   "AI Gait Insights",
-                  style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                  style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
               ],
             ),
@@ -1887,6 +1995,9 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
               "Get dynamic biomechanical analysis and foot microclimate safety warnings using DeepSeek V4Pro AI.",
               style: TextStyle(color: Colors.white54, fontSize: 13, height: 1.4),
               textAlign: TextAlign.center,
+              softWrap: true,
+              maxLines: 3,
+              overflow: TextOverflow.visible,
             ),
             const SizedBox(height: 16),
             ElevatedButton(
@@ -1895,50 +2006,81 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                 backgroundColor: const Color(0xFF8B5CF6),
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
               ),
-              child: const Text("Unlock AI Analysis", style: TextStyle(fontWeight: FontWeight.bold)),
+              child: const Text("Unlock AI Analysis", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
             ),
           ],
         ),
-      );
+      ),
+    ),
+  );
     }
 
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E2135),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: _aiError != null 
-              ? const Color(0xFFEF4444).withValues(alpha: 0.4) 
-              : Colors.white10, 
-          width: 1.0
-        ),
-      ),
-      child: Column(
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E2135).withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: _aiError != null 
+                  ? const Color(0xFFEF4444).withValues(alpha: 0.4) 
+                  : Colors.white.withValues(alpha: 0.05), 
+              width: 1.0
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.2),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              )
+            ],
+          ),
+          child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF00E5FF).withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: (_isSimulationMode 
+                            ? const Color(0xFF00E5FF) 
+                            : const Color(0xFF8B5CF6)).withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: _isSimulationMode
+                          ? const Icon(Icons.memory, color: Color(0xFF00E5FF), size: 24)
+                          : ClipOval(
+                              child: Image.asset(
+                                'assets/deepseek_logo.png',
+                                width: 24,
+                                height: 24,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
                     ),
-                    child: const Icon(Icons.psychology_outlined, color: Color(0xFF00E5FF), size: 24),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    "AI Gait Analysis Service",
-                    style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        "AI Gait Analysis Service",
+                        style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               if (_isSimulationMode)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1948,7 +2090,19 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                   ),
                   child: Text(
                     "LOCAL LLM",
-                    style: GoogleFonts.outfit(fontSize: 9, color: const Color(0xFFFBBF24), fontWeight: FontWeight.bold),
+                    style: GoogleFonts.outfit(fontSize: 10, color: const Color(0xFFFBBF24), fontWeight: FontWeight.bold),
+                  ),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF8B5CF6).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    "DEEPSEEK AI",
+                    style: GoogleFonts.outfit(fontSize: 10, color: const Color(0xFF8B5CF6), fontWeight: FontWeight.bold),
                   ),
                 ),
             ],
@@ -1956,20 +2110,46 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           const SizedBox(height: 20),
           
           if (_isAiLoading)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24.0),
-                child: Column(
-                  children: [
-                    const CircularProgressIndicator(color: Color(0xFF00E5FF)),
-                    const SizedBox(height: 16),
-                    Text(
-                      _isSimulationMode ? "Generating local LLM analysis..." : "Consulting DeepSeek V4Pro AI...",
-                      style: const TextStyle(color: Colors.white54, fontSize: 13),
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.0, end: 1.0),
+              duration: const Duration(milliseconds: 1500),
+              builder: (context, value, child) {
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 28),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    gradient: LinearGradient(
+                      colors: [
+                        const Color(0xFF00E5FF).withValues(alpha: 0.05 + value * 0.05),
+                        const Color(0xFF8B5CF6).withValues(alpha: 0.05 + value * 0.05),
+                      ],
                     ),
-                  ],
-                ),
-              ),
+                  ),
+                  child: Column(
+                    children: [
+                      SizedBox(
+                        width: 36,
+                        height: 36,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            const Color(0xFF00E5FF).withValues(alpha: 0.6 + value * 0.4),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _isSimulationMode ? "Generating local LLM analysis..." : "Consulting DeepSeek V4Pro AI...",
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.5 + value * 0.4),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
             )
           else ...[
             if (_aiResponseText != null) ...[
@@ -2072,6 +2252,20 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           Theme(
             data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
             child: ExpansionTile(
+              leading: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  gradient: LinearGradient(
+                    colors: [
+                      const Color(0xFF8B5CF6).withValues(alpha: 0.25),
+                      const Color(0xFF00E5FF).withValues(alpha: 0.15),
+                    ],
+                  ),
+                ),
+                child: const Icon(Icons.tune, color: Color(0xFF8B5CF6), size: 18),
+              ),
               title: Text(
                 "Developer Settings",
                 style: GoogleFonts.outfit(fontSize: 13, color: Colors.white54, fontWeight: FontWeight.bold),
@@ -2173,7 +2367,9 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           ),
         ],
       ),
-    );
+    ),
+  ),
+);
   }
 }
 

@@ -1,0 +1,41 @@
+name: iOS IPA Build
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  build-ios:
+    name: Build iOS App
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.22.0' # Adjust if you are using a specific version
+          channel: 'stable'
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      # To build an IPA for a real device, Apple requires code signing.
+      # This step requires you to set up GitHub Secrets with your Apple Developer Certificates.
+      # If you just want to test if it compiles (without installing on a real device), 
+      # you can change the next command to: flutter build ios --release --no-codesign
+      
+      - name: Build IPA
+        run: flutter build ipa --release --export-options-plist=ios/Runner/ExportOptions.plist
+        # Note: You need an active Apple Developer Program membership to build a signed IPA.
+        # This command assumes you have configured code signing in Xcode or via Match.
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-ios
+          path: build/ios/ipa/*.ipa
