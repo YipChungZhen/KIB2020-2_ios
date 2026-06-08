@@ -303,7 +303,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
 
   // AI Settings State
   bool _isAiConsented = false;
-  String _deepSeekApiKey = "sk-28455816c4bc471d97c99a94a32b3e90";
+  String _deepSeekApiKey = "sk-1b8twdHxlAIbZi70CF70IG7s2stG13jWoikbQczRHKK53rrj";
   bool _isSimulationMode = false;
   bool _developerSettingsExpanded = false;
   
@@ -311,9 +311,6 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   String? _aiResponseText;
   bool _isAiLoading = false;
   String? _aiError;
-  
-  final TextEditingController _apiKeyController = TextEditingController();
-  bool _showApiKeyText = false;
 
   double _calculateForceNewton(int adc) {
     if (adc >= 1022) return 0.0; // no force applied
@@ -359,7 +356,6 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     _ble.telemetry.removeListener(_checkThresholds);
     _countdownTimer?.cancel();
     _pulseController.dispose();
-    _apiKeyController.dispose();
     super.dispose();
   }
 
@@ -367,12 +363,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _isAiConsented = prefs.getBool('isAiConsented') ?? false;
-      _deepSeekApiKey = prefs.getString('deepSeekApiKey') ?? "sk-28455816c4bc471d97c99a94a32b3e90";
-      if (_deepSeekApiKey.isEmpty) {
-        _deepSeekApiKey = "sk-28455816c4bc471d97c99a94a32b3e90";
-      }
+      _deepSeekApiKey = "sk-1b8twdHxlAIbZi70CF70IG7s2stG13jWoikbQczRHKK53rrj";
       _isSimulationMode = prefs.getBool('isSimulationMode') ?? false;
-      _apiKeyController.text = _deepSeekApiKey;
     });
   }
 
@@ -384,13 +376,6 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     });
   }
 
-  Future<void> _saveApiKey(String key) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('deepSeekApiKey', key);
-    setState(() {
-      _deepSeekApiKey = key;
-    });
-  }
 
   Future<void> _saveSimulationMode(bool isSim) async {
     final prefs = await SharedPreferences.getInstance();
@@ -1873,7 +1858,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    "SIMULATION MODE",
+                    "LOCAL LLM",
                     style: GoogleFonts.outfit(fontSize: 9, color: const Color(0xFFFBBF24), fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -1890,7 +1875,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                     const CircularProgressIndicator(color: Color(0xFF00E5FF)),
                     const SizedBox(height: 16),
                     Text(
-                      _isSimulationMode ? "Generating simulation analysis..." : "Consulting DeepSeek V4Pro AI...",
+                      _isSimulationMode ? "Generating local LLM analysis..." : "Consulting DeepSeek V4Pro AI...",
                       style: const TextStyle(color: Colors.white54, fontSize: 13),
                     ),
                   ],
@@ -2018,96 +2003,65 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Mode Selector Row
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            "Simulated Demo Mode",
-                            style: TextStyle(color: Colors.white70, fontSize: 13),
-                          ),
-                          Switch(
-                            value: _isSimulationMode,
-                            activeThumbColor: const Color(0xFF00E5FF),
-                            onChanged: (val) {
-                              _saveSimulationMode(val);
-                            },
-                          ),
-                        ],
+                      Text(
+                        "AI Analysis Source",
+                        style: GoogleFonts.outfit(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w500),
                       ),
-                      const SizedBox(height: 12),
-                      
-                      // API Key Field (Only active/visible if simulation mode is off)
-                      if (!_isSimulationMode) ...[
-                        Text(
-                          "DeepSeek V4Pro API Key",
-                          style: GoogleFonts.outfit(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w500),
+                      const SizedBox(height: 8),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black26,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.white10),
                         ),
-                        const SizedBox(height: 8),
-                        Row(
+                        child: Row(
                           children: [
                             Expanded(
-                              child: TextField(
-                                controller: _apiKeyController,
-                                obscureText: !_showApiKeyText,
-                                style: const TextStyle(color: Colors.white, fontSize: 13),
-                                decoration: InputDecoration(
-                                  filled: true,
-                                  fillColor: Colors.black26,
-                                  hintText: "sk-...",
-                                  hintStyle: const TextStyle(color: Colors.white24),
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                    borderSide: const BorderSide(color: Colors.white10),
+                              child: GestureDetector(
+                                onTap: () => _saveSimulationMode(true),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: _isSimulationMode ? const Color(0xFF8B5CF6) : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(11),
                                   ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                    borderSide: const BorderSide(color: Color(0xFF00E5FF)),
-                                  ),
-                                  suffixIcon: IconButton(
-                                    icon: Icon(
-                                      _showApiKeyText ? Icons.visibility : Icons.visibility_off,
-                                      color: Colors.white38,
-                                      size: 18,
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    "Local LLM",
+                                    style: TextStyle(
+                                      color: _isSimulationMode ? Colors.white : Colors.white54,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
                                     ),
-                                    onPressed: () {
-                                      setState(() {
-                                        _showApiKeyText = !_showApiKeyText;
-                                      });
-                                    },
                                   ),
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            ElevatedButton(
-                              onPressed: () {
-                                _saveApiKey(_apiKeyController.text);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text("DeepSeek API Key saved locally."),
-                                    backgroundColor: Color(0xFF1E2135),
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () => _saveSimulationMode(false),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: !_isSimulationMode ? const Color(0xFF00E5FF) : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(11),
                                   ),
-                                );
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF8B5CF6),
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    "Deepseek AI",
+                                    style: TextStyle(
+                                      color: !_isSimulationMode ? Colors.black : Colors.white54,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
                               ),
-                              child: const Text("Save", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          "Your key is encrypted and stored locally. Get a free API key by visiting DeepSeek's console.",
-                          style: TextStyle(color: Colors.white24, fontSize: 10, height: 1.3),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
+                      ),
+                      const SizedBox(height: 16),
                       
                       // Revoke Consent Option
                       Align(
