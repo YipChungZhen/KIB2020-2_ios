@@ -9,6 +9,8 @@ class AfoTelemetry {
   final double temperature; // Under-foot temperature in Celsius
   final double humidity;    // Under-foot relative humidity in %
   final double cop;         // Calculated Center of Pressure (-1.0 to +1.0)
+  final double cadence;     // Walking cadence in steps per minute
+  final int stepCount;      // Cumulative step count
   final DateTime timestamp;
 
   AfoTelemetry({
@@ -17,13 +19,16 @@ class AfoTelemetry {
     required this.temperature,
     required this.humidity,
     required this.cop,
+    required this.cadence,
+    required this.stepCount,
     required this.timestamp,
   });
 
   @override
   String toString() {
     return 'AFO Data: FSR1=$fsr1, FSR2=$fsr2, Temp=${temperature.toStringAsFixed(1)}°C, '
-           'Humid=${humidity.toStringAsFixed(1)}%, COP=${cop.toStringAsFixed(2)}';
+           'Humid=${humidity.toStringAsFixed(1)}%, COP=${cop.toStringAsFixed(2)}, '
+           'Cadence=${cadence.toStringAsFixed(1)} SPM, Steps=$stepCount';
   }
 }
 
@@ -197,15 +202,17 @@ class BleService {
     }
   }
 
-  /// Unpack binary structure: struct.pack('<HHfff', fsr1, fsr2, temp, humidity, cop)
+  /// Unpack binary structure: struct.pack('<HHffffI', fsr1, fsr2, temp, humidity, cop, cadence, stepCount)
   /// Byte index offsets:
   /// [0-1]  : fsr1 (uint16, 2 bytes)
   /// [2-3]  : fsr2 (uint16, 2 bytes)
   /// [4-7]  : temperature (float32, 4 bytes)
   /// [8-11] : humidity (float32, 4 bytes)
   /// [12-15]: center of pressure (float32, 4 bytes)
+  /// [16-19]: walking cadence (float32, 4 bytes)
+  /// [20-23]: cumulative step count (uint32, 4 bytes)
   void _parseBinaryPayload(List<int> rawBytes) {
-    if (rawBytes.length < 16) {
+    if (rawBytes.length < 24) {
       debugPrint("BLE: Ignored invalid packet, length: ${rawBytes.length}");
       return;
     }
@@ -220,6 +227,8 @@ class BleService {
       double temp = byteData.getFloat32(4, Endian.little);
       double humidity = byteData.getFloat32(8, Endian.little);
       double cop = byteData.getFloat32(12, Endian.little);
+      double cadence = byteData.getFloat32(16, Endian.little);
+      int stepCount = byteData.getUint32(20, Endian.little);
 
       // Create new telemetry snapshot and publish to listeners
       telemetry.value = AfoTelemetry(
@@ -228,6 +237,8 @@ class BleService {
         temperature: temp,
         humidity: humidity,
         cop: cop,
+        cadence: cadence,
+        stepCount: stepCount,
         timestamp: DateTime.now(),
       );
     } catch (e) {

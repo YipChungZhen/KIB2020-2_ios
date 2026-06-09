@@ -583,6 +583,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           temp: data.temperature,
           humidity: data.humidity,
           cop: data.cop,
+          cadence: data.cadence,
+          stepCount: data.stepCount,
         );
       } else {
         result = await AiService.analyzeGait(
@@ -592,6 +594,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           temp: data.temperature,
           humidity: data.humidity,
           cop: data.cop,
+          cadence: data.cadence,
+          stepCount: data.stepCount,
         );
       }
 
@@ -1308,6 +1312,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                 // Dashboard Tab
                 _buildCountdownTimerSection(),
                 const SizedBox(height: 20),
+                _buildActivitySection(data),
+                const SizedBox(height: 20),
                 _buildMicroclimateSection(data),
                 const SizedBox(height: 20),
                 _buildBalanceAnalyticsSection(data),
@@ -1323,6 +1329,50 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           ),
         );
       },
+    );
+  }
+
+
+  /// Activity Section (Steps & Cadence Cards)
+  Widget _buildActivitySection(AfoTelemetry data) {
+    bool isWalking = data.cadence > 0;
+
+    return Row(
+      children: [
+        Expanded(
+          child: _buildGlassCard(
+            title: "Steps Walked",
+            value: "${data.stepCount}",
+            icon: Icons.directions_walk_rounded,
+            indicatorText: "Daily Active",
+            indicatorColor: const Color(0xFF00FFC2),
+            iconColor: const Color(0xFF00FFC2),
+            glowingBorder: false,
+            gradient: const LinearGradient(
+              colors: [Color(0xFF102830), Color(0xFF1E2135)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: _buildGlassCard(
+            title: "Walking Cadence",
+            value: "${data.cadence.toStringAsFixed(0)} SPM",
+            icon: Icons.speed_rounded,
+            indicatorText: isWalking ? "Walking" : "Stationary",
+            indicatorColor: isWalking ? const Color(0xFF8B5CF6) : Colors.white30,
+            iconColor: const Color(0xFF8B5CF6),
+            glowingBorder: isWalking,
+            gradient: const LinearGradient(
+              colors: [Color(0xFF201A3A), Color(0xFF1E2135)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
