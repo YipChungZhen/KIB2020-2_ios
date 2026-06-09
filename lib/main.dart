@@ -311,9 +311,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   // 30s Refresh Countdown State
   int _countdownSeconds = 30;
   Timer? _countdownTimer;
-  int? _lastFsr1;
-  int? _lastFsr2;
-  double? _lastCop;
+
 
   // COP 30s Countdown History State
   int _stepGoal = 5000;
@@ -671,20 +669,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
 
     final double liveCop = _getCop(data);
 
-    // Self-synchronization logic:
-    // If fsr1, fsr2, or cop has changed from the last cached package, it means
-    // the 30-second window has refreshed on the board.
-    if (_lastFsr1 != data.fsr1 || _lastFsr2 != data.fsr2 || _lastCop != liveCop) {
-      _lastFsr1 = data.fsr1;
-      _lastFsr2 = data.fsr2;
-      _lastCop = liveCop;
-      setState(() {
-        _countdownSeconds = 30;
-        _lastCopWindow = List.from(_currentCopWindow);
-        _currentCopWindow.clear();
-        _cycleStartTime = DateTime.now();
-      });
-    }
+
 
     // Capture COP data point in the current 30s cycle
     _cycleStartTime ??= DateTime.now();
