@@ -315,9 +315,12 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   int? _lastFsr2;
   double? _lastCop;
 
-  // COP 10-Minute History State
-  final List<double> _copHistory = [-0.15, 0.05, -0.08, 0.12, -0.02, 0.08];
-  Timer? _copHistoryTimer;
+  // COP 30s Countdown History State
+  int _stepGoal = 5000;
+  TextEditingController? _stepGoalController;
+  final List<FlSpot> _currentCopWindow = [];
+  List<FlSpot> _lastCopWindow = [];
+  DateTime? _cycleStartTime;
 
   // Status dot pulse animation
   late AnimationController _pulseController;
@@ -370,18 +373,17 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     _ble.telemetry.addListener(_checkThresholds);
     _startCountdownTimer();
 
-    // Start 10-minute COP history logger timer
-    _copHistoryTimer = Timer.periodic(const Duration(minutes: 10), (timer) {
-      final data = _ble.telemetry.value;
-      if (data != null && mounted) {
-        setState(() {
-          _copHistory.add(data.cop);
-          if (_copHistory.length > 12) { // Keep last 2 hours (12 points)
-            _copHistory.removeAt(0);
-          }
-        });
-      }
-    });
+    _stepGoalController = TextEditingController(text: "5000");
+    _cycleStartTime = DateTime.now();
+    _lastCopWindow = [
+      const FlSpot(0.0, -0.1),
+      const FlSpot(5.0, 0.05),
+      const FlSpot(10.0, -0.08),
+      const FlSpot(15.0, 0.12),
+      const FlSpot(20.0, -0.02),
+      const FlSpot(25.0, 0.08),
+      const FlSpot(30.0, 0.0),
+    ];
 
     // Load persisted AI preferences
     _loadPrefs();
@@ -391,8 +393,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   void dispose() {
     _ble.telemetry.removeListener(_checkThresholds);
     _countdownTimer?.cancel();
-    _copHistoryTimer?.cancel();
     _pulseController.dispose();
+    _stepGoalController?.dispose();
     super.dispose();
   }
 
@@ -403,9 +405,10 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
       _deepSeekApiKey = "sk-352248d215c5440b84e7f7263cfede53";
       _isSimulationMode = prefs.getBool('isSimulationMode') ?? true;
       _isWifiPermissionGranted = prefs.getBool('isWifiPermissionGranted') ?? false;
+      _stepGoal = prefs.getInt('stepGoal') ?? 5000;
+      _stepGoalController?.text = _stepGoal.toString();
     });
   }
-
   Future<void> _saveConsent(bool consented) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('isAiConsented', consented);
@@ -419,6 +422,13 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     await prefs.setBool('isWifiPermissionGranted', granted);
     setState(() {
       _isWifiPermissionGranted = granted;
+    });
+  }
+  Future<void> _saveStepGoal(int goal) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('stepGoal', goal);
+    setState(() {
+      _stepGoal = goal;
     });
   }
 
@@ -638,6 +648,9 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
             _countdownSeconds--;
           } else {
             _countdownSeconds = 30;
+            _lastCopWindow = List.from(_currentCopWindow);
+            _currentCopWindow.clear();
+            _cycleStartTime = DateTime.now();
           }
         });
       }
@@ -657,7 +670,19 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
       _lastCop = data.cop;
       setState(() {
         _countdownSeconds = 30;
+        _lastCopWindow = List.from(_currentCopWindow);
+        _currentCopWindow.clear();
+        _cycleStartTime = DateTime.now();
       });
+    }
+
+    // Capture COP data point in the current 30s cycle
+    _cycleStartTime ??= DateTime.now();
+    final elapsed = DateTime.now().difference(_cycleStartTime!).inMilliseconds / 1000.0;
+    if (elapsed <= 30.0) {
+      if (_currentCopWindow.isEmpty || (elapsed - _currentCopWindow.last.x) >= 0.1) {
+        _currentCopWindow.add(FlSpot(elapsed, data.cop));
+      }
     }
 
     // Threshold logic:
@@ -1353,32 +1378,27 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   }
 
 
-  /// Activity Section (Steps & Cadence Cards)
   Widget _buildActivitySection(AfoTelemetry data) {
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _buildStepGoalCard(data),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: _buildCadenceGaugeCard(data),
-        ),
+        _buildStepGoalCard(data),
+        const SizedBox(height: 16),
+        _buildCadenceGaugeCard(data),
       ],
     );
   }
 
   /// Step Goal progress ring card widget
   Widget _buildStepGoalCard(AfoTelemetry data) {
-    const int stepGoal = 5000;
-    double percent = (data.stepCount / stepGoal).clamp(0.0, 1.0);
+    double percent = (data.stepCount / _stepGoal).clamp(0.0, 1.0);
     
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
         child: Container(
-          padding: const EdgeInsets.all(16),
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               colors: [Color(0xFF102830), Color(0xFF1E2135)],
@@ -1402,14 +1422,14 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
             children: [
               // Progress Ring
               SizedBox(
-                width: 50,
-                height: 50,
+                width: 70,
+                height: 70,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
                     CircularProgressIndicator(
                       value: percent,
-                      strokeWidth: 3.5,
+                      strokeWidth: 5.0,
                       backgroundColor: Colors.white10,
                       valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF00FFC2)),
                     ),
@@ -1417,38 +1437,58 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                       child: Icon(
                         Icons.directions_walk_rounded,
                         color: Color(0xFF00FFC2),
-                        size: 20,
+                        size: 28,
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 20),
               // Step texts
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text(
-                      "Steps Walked",
-                      style: TextStyle(color: Colors.white54, fontSize: 10),
-                    ),
-                    const SizedBox(height: 2),
                     Text(
-                      "${data.stepCount}",
+                      "DAILY STEP PROGRESS",
                       style: GoogleFonts.outfit(
-                        color: Colors.white,
-                        fontSize: 20,
+                        color: Colors.white54,
+                        fontSize: 11,
                         fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 4),
+                    Row(
+                      textBaseline: TextBaseline.alphabetic,
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      children: [
+                        Text(
+                          "${data.stepCount}",
+                          style: GoogleFonts.outfit(
+                            color: Colors.white,
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          "/ $_stepGoal",
+                          style: GoogleFonts.outfit(
+                            color: Colors.white38,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
                     Text(
-                      "Goal: ${(percent * 100).toStringAsFixed(0)}%",
+                      "Goal Progress: ${(percent * 100).toStringAsFixed(0)}%",
                       style: GoogleFonts.outfit(
                         color: const Color(0xFF00FFC2),
-                        fontSize: 9,
+                        fontSize: 11,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -1478,7 +1518,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
         child: Container(
-          padding: const EdgeInsets.all(16),
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               colors: [Color(0xFF201A3A), Color(0xFF1E2135)],
@@ -1503,14 +1544,14 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
             children: [
               // Cadence Gauge Ring
               SizedBox(
-                width: 50,
-                height: 50,
+                width: 70,
+                height: 70,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
                     CircularProgressIndicator(
                       value: percent,
-                      strokeWidth: 3.5,
+                      strokeWidth: 5.0,
                       backgroundColor: Colors.white10,
                       valueColor: AlwaysStoppedAnimation<Color>(isWalking ? cadenceColor : Colors.white30),
                     ),
@@ -1518,38 +1559,43 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                       child: Icon(
                         Icons.speed_rounded,
                         color: isWalking ? cadenceColor : Colors.white30,
-                        size: 20,
+                        size: 28,
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 20),
               // Cadence texts
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text(
-                      "Walking Cadence",
-                      style: TextStyle(color: Colors.white54, fontSize: 10),
+                    Text(
+                      "WALKING CADENCE",
+                      style: GoogleFonts.outfit(
+                        color: Colors.white54,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2,
+                      ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 4),
                     Text(
                       "${data.cadence.toStringAsFixed(0)} SPM",
                       style: GoogleFonts.outfit(
                         color: Colors.white,
-                        fontSize: 18,
+                        fontSize: 32,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 4),
                     Text(
-                      isWalking ? (data.cadence > 110 ? "FAST" : data.cadence > 80 ? "TARGET" : "SLOW") : "STATIONARY",
+                      isWalking ? (data.cadence > 110 ? "FAST CADENCE" : data.cadence > 80 ? "TARGET CADENCE" : "SLOW CADENCE") : "STATIONARY",
                       style: GoogleFonts.outfit(
-                        color: isWalking ? cadenceColor : Colors.white30,
-                        fontSize: 9,
+                        color: isWalking ? cadenceColor : Colors.white38,
+                        fontSize: 11,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -1563,14 +1609,13 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     );
   }
 
-  /// Center of Pressure History Line Chart (10-minute intervals)
   Widget _buildCopHistorySection() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
         child: Container(
-          height: 280,
+          height: 310,
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             color: const Color(0xFF1E2135).withValues(alpha: 0.7),
@@ -1588,19 +1633,19 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                "Center of Pressure Trend (10m Intervals)",
+                "Center of Pressure Real-Time Trend (30s Window)",
                 style: GoogleFonts.outfit(
-                  fontSize: 18,
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
               Expanded(
                 child: LineChart(
                   LineChartData(
                     minX: 0,
-                    maxX: 11, // Max 12 points (0 to 11)
+                    maxX: 30,
                     minY: -1.2,
                     maxY: 1.2,
                     lineTouchData: LineTouchData(
@@ -1612,8 +1657,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                                 ? "Centered"
                                 : spot.y > 0 ? "Posterior" : "Anterior";
                             return LineTooltipItem(
-                              '${spot.y.toStringAsFixed(2)} ($dir)',
-                              const TextStyle(color: Color(0xFF8B5CF6), fontWeight: FontWeight.bold, fontSize: 13),
+                              '${spot.y.toStringAsFixed(2)} ($dir)\nTime: ${spot.x.toStringAsFixed(1)}s',
+                              const TextStyle(color: Color(0xFF8B5CF6), fontWeight: FontWeight.bold, fontSize: 12),
                             );
                           }).toList();
                         },
@@ -1625,18 +1670,12 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                         sideTitles: SideTitles(
                           showTitles: true,
                           reservedSize: 22,
+                          interval: 5,
                           getTitlesWidget: (value, meta) {
-                            // Calculate labels: index 11 is "Now", index 0 is "-110m"
-                            int valInt = value.toInt();
-                            if (valInt % 2 == 1 || valInt == 0 || valInt == 11) {
-                              int minutesAgo = (11 - valInt) * 10;
-                              String label = valInt == 11 ? "Now" : "-${minutesAgo}m";
-                              return Text(
-                                label,
-                                style: const TextStyle(color: Colors.white38, fontSize: 10),
-                              );
-                            }
-                            return const SizedBox.shrink();
+                            return Text(
+                              "${value.toInt()}s",
+                              style: const TextStyle(color: Colors.white38, fontSize: 10),
+                            );
                           },
                         ),
                       ),
@@ -1663,20 +1702,20 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                       show: true,
                       drawVerticalLine: true,
                       horizontalInterval: 0.5,
-                      verticalInterval: 1.0,
+                      verticalInterval: 5.0,
                       getDrawingHorizontalLine: (value) => FlLine(color: Colors.white10, strokeWidth: 1, dashArray: [5, 5]),
                       getDrawingVerticalLine: (value) => FlLine(color: Colors.white10, strokeWidth: 1, dashArray: [5, 5]),
                     ),
                     borderData: FlBorderData(show: false),
                     lineBarsData: [
                       LineChartBarData(
-                        spots: _copHistory.asMap().entries.map((e) {
-                          return FlSpot(e.key.toDouble(), e.value);
-                        }).toList(),
+                        spots: _currentCopWindow.isEmpty
+                            ? [const FlSpot(0, 0)]
+                            : _currentCopWindow,
                         isCurved: true,
                         barWidth: 4,
                         isStrokeCapRound: true,
-                        dotData: const FlDotData(show: true),
+                        dotData: const FlDotData(show: false),
                         belowBarData: BarAreaData(
                           show: true,
                           gradient: LinearGradient(
@@ -1696,6 +1735,26 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                   ),
                 ),
               ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: _showLastCycleChartDialog,
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF00E5FF),
+                    padding: EdgeInsets.zero,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text(
+                    "Show Last Cycle Graph",
+                    style: TextStyle(
+                      fontSize: 12,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -1703,7 +1762,129 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     );
   }
 
-
+  void _showLastCycleChartDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1E2135),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(
+            "Last 30s Cycle COP Graph",
+            style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+          content: SizedBox(
+            height: 250,
+            width: double.maxFinite,
+            child: _lastCopWindow.isEmpty
+                ? Center(
+                    child: Text(
+                      "No data available for the last cycle.\nWait for the first 30s countdown to complete.",
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.outfit(color: Colors.white54, fontSize: 13),
+                    ),
+                  )
+                : LineChart(
+                    LineChartData(
+                      minX: 0,
+                      maxX: 30,
+                      minY: -1.2,
+                      maxY: 1.2,
+                      lineTouchData: LineTouchData(
+                        touchTooltipData: LineTouchTooltipData(
+                          getTooltipColor: (_) => const Color(0xFF2A2D40),
+                          getTooltipItems: (touchedSpots) {
+                            return touchedSpots.map((spot) {
+                              String dir = spot.y == 0
+                                  ? "Centered"
+                                  : spot.y > 0 ? "Posterior" : "Anterior";
+                              return LineTooltipItem(
+                                '${spot.y.toStringAsFixed(2)} ($dir)\nTime: ${spot.x.toStringAsFixed(1)}s',
+                                const TextStyle(color: Color(0xFF8B5CF6), fontWeight: FontWeight.bold, fontSize: 12),
+                              );
+                            }).toList();
+                          },
+                        ),
+                      ),
+                      titlesData: FlTitlesData(
+                        show: true,
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 22,
+                            interval: 5,
+                            getTitlesWidget: (value, meta) {
+                              return Text(
+                                "${value.toInt()}s",
+                                style: const TextStyle(color: Colors.white38, fontSize: 10),
+                              );
+                            },
+                          ),
+                        ),
+                        leftTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 40,
+                            getTitlesWidget: (value, meta) {
+                              if (value == -1.0) {
+                                return const Text("Ant", style: TextStyle(color: Colors.white30, fontSize: 10));
+                              } else if (value == 0.0) {
+                                return const Text("Ctr", style: TextStyle(color: Colors.white30, fontSize: 10));
+                              } else if (value == 1.0) {
+                                return const Text("Post", style: TextStyle(color: Colors.white30, fontSize: 10));
+                              }
+                              return const SizedBox.shrink();
+                            },
+                          ),
+                        ),
+                        topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      ),
+                      gridData: FlGridData(
+                        show: true,
+                        drawVerticalLine: true,
+                        horizontalInterval: 0.5,
+                        verticalInterval: 5.0,
+                        getDrawingHorizontalLine: (value) => FlLine(color: Colors.white10, strokeWidth: 1, dashArray: [5, 5]),
+                        getDrawingVerticalLine: (value) => FlLine(color: Colors.white10, strokeWidth: 1, dashArray: [5, 5]),
+                      ),
+                      borderData: FlBorderData(show: false),
+                      lineBarsData: [
+                        LineChartBarData(
+                          spots: _lastCopWindow,
+                          isCurved: true,
+                          barWidth: 4,
+                          isStrokeCapRound: true,
+                          dotData: const FlDotData(show: false),
+                          belowBarData: BarAreaData(
+                            show: true,
+                            gradient: LinearGradient(
+                              colors: [
+                                const Color(0xFF00E5FF).withValues(alpha: 0.3),
+                                const Color(0xFF8B5CF6).withValues(alpha: 0.0),
+                              ],
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                            ),
+                          ),
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF00E5FF), Color(0xFF8B5CF6)],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text("Close", style: GoogleFonts.outfit(color: const Color(0xFF00E5FF))),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   /// Microclimate Section (Temp & Humidity Cards)
   Widget _buildMicroclimateSection(AfoTelemetry data) {
@@ -2722,6 +2903,43 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                             ),
                           ],
                         ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        "Configure Daily Step Goal",
+                        style: GoogleFonts.outfit(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w500),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _stepGoalController,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        style: GoogleFonts.outfit(color: Colors.white, fontSize: 14),
+                        decoration: InputDecoration(
+                          hintText: "Enter step goal (e.g. 5000)",
+                          hintStyle: const TextStyle(color: Colors.white30),
+                          filled: true,
+                          fillColor: Colors.black26,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Colors.white10),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Color(0xFF00E5FF)),
+                          ),
+                        ),
+                        onSubmitted: (val) {
+                          final newGoal = int.tryParse(val) ?? 5000;
+                          _saveStepGoal(newGoal);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text("Daily step goal set to $newGoal!"),
+                              backgroundColor: const Color(0xFF1E2135),
+                            ),
+                          );
+                        },
                       ),
                       const SizedBox(height: 16),
                       
