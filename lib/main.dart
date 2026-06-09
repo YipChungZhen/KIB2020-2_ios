@@ -356,6 +356,13 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     return force > 100.0 ? 100.0 : force;
   }
 
+  double _getCop(AfoTelemetry data) {
+    final double f1 = _calculateForceNewton(data.fsr1);
+    final double f2 = _calculateForceNewton(data.fsr2);
+    if ((f1 + f2) <= 0) return 0.0;
+    return (f2 - f1) / (f2 + f1);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -602,6 +609,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     try {
       final double fsr1N = _calculateForceNewton(data.fsr1);
       final double fsr2N = _calculateForceNewton(data.fsr2);
+      final double calculatedCop = _getCop(data);
       
       String result;
       if (_isSimulationMode) {
@@ -610,7 +618,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           fsr2Newtons: fsr2N,
           temp: data.temperature,
           humidity: data.humidity,
-          cop: data.cop,
+          cop: calculatedCop,
           cadence: data.cadence,
           stepCount: data.stepCount,
         );
@@ -621,7 +629,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           fsr2Newtons: fsr2N,
           temp: data.temperature,
           humidity: data.humidity,
-          cop: data.cop,
+          cop: calculatedCop,
           cadence: data.cadence,
           stepCount: data.stepCount,
         );
@@ -661,13 +669,15 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     final data = _ble.telemetry.value;
     if (data == null) return;
 
+    final double liveCop = _getCop(data);
+
     // Self-synchronization logic:
     // If fsr1, fsr2, or cop has changed from the last cached package, it means
     // the 30-second window has refreshed on the board.
-    if (_lastFsr1 != data.fsr1 || _lastFsr2 != data.fsr2 || _lastCop != data.cop) {
+    if (_lastFsr1 != data.fsr1 || _lastFsr2 != data.fsr2 || _lastCop != liveCop) {
       _lastFsr1 = data.fsr1;
       _lastFsr2 = data.fsr2;
-      _lastCop = data.cop;
+      _lastCop = liveCop;
       setState(() {
         _countdownSeconds = 30;
         _lastCopWindow = List.from(_currentCopWindow);
@@ -681,13 +691,13 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     final elapsed = DateTime.now().difference(_cycleStartTime!).inMilliseconds / 1000.0;
     if (elapsed <= 30.0) {
       if (_currentCopWindow.isEmpty || (elapsed - _currentCopWindow.last.x) >= 0.1) {
-        _currentCopWindow.add(FlSpot(elapsed, data.cop));
+        _currentCopWindow.add(FlSpot(elapsed, liveCop));
       }
     }
 
     // Threshold logic:
     // Asymmetry is defined when weight is shifted significantly to one side (|COP| > 0.40)
-    bool isUnbalanced = data.cop.abs() > 0.40;
+    bool isUnbalanced = liveCop.abs() > 0.40;
     // Temp > 35.0°C indicates skin risk
     bool isHot = data.temperature > 35.0;
     // Humidity > 75.0% indicates sweating / maceration risk
@@ -695,7 +705,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
 
     String? newAlert;
     if (isUnbalanced) {
-      newAlert = "Force Imbalance! Leaning heavily to the ${data.cop > 0 ? 'Lateral' : 'Medial'} side.";
+      newAlert = "Force Imbalance! Leaning heavily to the ${liveCop > 0 ? 'Lateral' : 'Medial'} side.";
     } else if (isHot) {
       newAlert = "High Orthosis Temp (${data.temperature.toStringAsFixed(1)}°C)! Risk of skin maceration.";
     } else if (isHumid) {
@@ -1968,12 +1978,13 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
 
   /// Balance and COP Analytics Card
   Widget _buildBalanceAnalyticsSection(AfoTelemetry data) {
+    final double liveCop = _getCop(data);
     // Determine pointer offset for COP visualization
-    // data.cop goes from -1.0 (Medial) to +1.0 (Lateral)
-    double alignmentVal = (data.cop + 1.0) / 2.0; // Normalized to 0.0 - 1.0
+    // liveCop goes from -1.0 (Medial) to +1.0 (Lateral)
+    double alignmentVal = (liveCop + 1.0) / 2.0; // Normalized to 0.0 - 1.0
     alignmentVal = alignmentVal.clamp(0.0, 1.0);
 
-    bool copWarning = data.cop.abs() > 0.40;
+    bool copWarning = liveCop.abs() > 0.40;
     Color copGlowColor = copWarning ? const Color(0xFFEF4444) : const Color(0xFF00FFC2);
 
     return ClipRRect(
@@ -2058,9 +2069,9 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      data.cop == 0 
+                      liveCop == 0 
                           ? "Perfect Alignment" 
-                          : "${(data.cop.abs() * 100).toStringAsFixed(0)}% Shifted ${data.cop > 0 ? 'Anterior' : 'Posterior'}",
+                          : "${(liveCop.abs() * 100).toStringAsFixed(0)}% Shifted ${liveCop > 0 ? 'Anterior' : 'Posterior'}",
                       style: GoogleFonts.outfit(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
@@ -2098,7 +2109,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                         // Slider indicator knob
                         AnimatedAlign(
                           duration: const Duration(milliseconds: 100),
-                          alignment: Alignment(data.cop, 0),
+                          alignment: Alignment(liveCop, 0),
                           child: Container(
                             width: 18,
                             height: 18,
@@ -2163,6 +2174,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   Widget _buildFootSoleVisualizer(AfoTelemetry data) {
     final double force1 = _calculateForceNewton(data.fsr1);
     final double force2 = _calculateForceNewton(data.fsr2);
+    final double liveCop = _getCop(data);
 
     // Scale size of sensors according to force in Newtons (0 - 100)
     double fsr1Size = 25 + (force1 / 100.0) * 35;
@@ -2269,7 +2281,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                 duration: const Duration(milliseconds: 150),
                 curve: Curves.easeInOut,
                 top: 68, // vertical center between anterior & posterior bubbles
-                left: (50 + (data.cop * 20) - 6).clamp(10.0, 78.0),
+                left: (50 + (liveCop * 20) - 6).clamp(10.0, 78.0),
                 child: Container(
                   width: 12,
                   height: 12,
