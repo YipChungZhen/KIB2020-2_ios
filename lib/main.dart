@@ -1358,11 +1358,13 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                 _buildActivitySection(data),
                 const SizedBox(height: 20),
                 _buildMicroclimateSection(data),
-                const SizedBox(height: 20),
-                _buildBalanceAnalyticsSection(data),
               ] else if (_selectedIndex == 1) ...[
                 // Analytics Tab
+                _buildCountdownTimerSection(),
+                const SizedBox(height: 20),
                 _buildForceGraphSection(data),
+                const SizedBox(height: 20),
+                _buildBalanceAnalyticsSection(data),
                 const SizedBox(height: 20),
                 _buildCopHistorySection(),
               ] else if (_selectedIndex == 2) ...[
@@ -1474,11 +1476,44 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          "/ $_stepGoal",
+                          "/",
                           style: GoogleFonts.outfit(
                             color: Colors.white38,
                             fontSize: 16,
                             fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        SizedBox(
+                          width: 80,
+                          child: TextField(
+                            controller: _stepGoalController,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                            style: GoogleFonts.outfit(
+                              color: const Color(0xFF00FFC2),
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+                              border: UnderlineInputBorder(
+                                borderSide: BorderSide(color: Colors.white24),
+                              ),
+                              enabledBorder: UnderlineInputBorder(
+                                borderSide: BorderSide(color: Colors.white24),
+                              ),
+                              focusedBorder: UnderlineInputBorder(
+                                borderSide: BorderSide(color: Color(0xFF00FFC2)),
+                              ),
+                            ),
+                            onChanged: (val) {
+                              final newGoal = int.tryParse(val) ?? 5000;
+                              if (newGoal > 0) {
+                                _saveStepGoal(newGoal);
+                              }
+                            },
                           ),
                         ),
                       ],
@@ -1610,6 +1645,11 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   }
 
   Widget _buildCopHistorySection() {
+    final double elapsed = _cycleStartTime != null
+        ? (DateTime.now().difference(_cycleStartTime!).inMilliseconds / 1000.0).clamp(0.0, 30.0)
+        : 30.0;
+    final double dynamicMaxX = elapsed < 5.0 ? 5.0 : elapsed;
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
       child: BackdropFilter(
@@ -1645,7 +1685,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                 child: LineChart(
                   LineChartData(
                     minX: 0,
-                    maxX: 30,
+                    maxX: dynamicMaxX,
                     minY: -1.2,
                     maxY: 1.2,
                     lineTouchData: LineTouchData(
@@ -1891,39 +1931,35 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     bool tempWarning = data.temperature > 35.0;
     bool humidWarning = data.humidity > 75.0;
 
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _buildGlassCard(
-            title: "Microclimate Temp",
-            value: "${data.temperature.toStringAsFixed(1)}°C",
-            icon: Icons.thermostat_outlined,
-            indicatorText: tempWarning ? "Maceration Risk" : "Safe Climate",
-            indicatorColor: tempWarning ? const Color(0xFFEF4444) : const Color(0xFF10B981),
-            iconColor: const Color(0xFFF87171),
-            glowingBorder: tempWarning,
-            gradient: const LinearGradient(
-              colors: [Color(0xFF2E1A22), Color(0xFF1E2135)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+        _buildGlassCard(
+          title: "Microclimate Temp",
+          value: "${data.temperature.toStringAsFixed(1)}°C",
+          icon: Icons.thermostat_outlined,
+          indicatorText: tempWarning ? "Maceration Risk" : "Safe Climate",
+          indicatorColor: tempWarning ? const Color(0xFFEF4444) : const Color(0xFF10B981),
+          iconColor: const Color(0xFFF87171),
+          glowingBorder: tempWarning,
+          gradient: const LinearGradient(
+            colors: [Color(0xFF2E1A22), Color(0xFF1E2135)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
         ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: _buildGlassCard(
-            title: "Foot Humidity",
-            value: "${data.humidity.toStringAsFixed(1)}%",
-            icon: Icons.water_drop_outlined,
-            indicatorText: humidWarning ? "Sweat Warning" : "Optimal dryness",
-            indicatorColor: humidWarning ? const Color(0xFFFBBF24) : const Color(0xFF10B981),
-            iconColor: const Color(0xFF60A5FA),
-            glowingBorder: humidWarning,
-            gradient: const LinearGradient(
-              colors: [Color(0xFF1D2840), Color(0xFF1E2135)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+        const SizedBox(height: 16),
+        _buildGlassCard(
+          title: "Foot Humidity",
+          value: "${data.humidity.toStringAsFixed(1)}%",
+          icon: Icons.water_drop_outlined,
+          indicatorText: humidWarning ? "Sweat Warning" : "Optimal Dryness",
+          indicatorColor: humidWarning ? const Color(0xFFFBBF24) : const Color(0xFF10B981),
+          iconColor: const Color(0xFF60A5FA),
+          glowingBorder: humidWarning,
+          gradient: const LinearGradient(
+            colors: [Color(0xFF1D2840), Color(0xFF1E2135)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
         ),
       ],
@@ -2430,7 +2466,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
         child: Container(
-          padding: const EdgeInsets.all(16),
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             gradient: gradient,
             borderRadius: BorderRadius.circular(24),
@@ -2449,57 +2486,61 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
               )
             ],
           ),
-          child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: Row(
             children: [
-              Icon(icon, color: iconColor, size: 22),
-              const SizedBox(width: 4),
-              Flexible(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: indicatorColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    indicatorText.toUpperCase(),
-                    style: GoogleFonts.outfit(
-                      fontSize: 10,
-                      color: indicatorColor,
-                      fontWeight: FontWeight.bold,
+              Container(
+                width: 70,
+                height: 70,
+                decoration: BoxDecoration(
+                  color: iconColor.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Icon(icon, color: iconColor, size: 28),
+                ),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      title.toUpperCase(),
+                      style: GoogleFonts.outfit(
+                        color: Colors.white54,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2,
+                      ),
                     ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                    softWrap: false,
-                  ),
+                    const SizedBox(height: 4),
+                    Text(
+                      value,
+                      style: GoogleFonts.outfit(
+                        color: Colors.white,
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      indicatorText,
+                      style: GoogleFonts.outfit(
+                        color: indicatorColor,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Text(
-            title,
-            style: const TextStyle(color: Colors.white54, fontSize: 11),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: GoogleFonts.outfit(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
+        ),
       ),
-    ),
-  ),
-);
+    );
   }
-
   Widget _buildAiAnalysisSection(AfoTelemetry data) {
     if (!_isAiConsented) {
       return ClipRRect(
@@ -2903,43 +2944,6 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                             ),
                           ],
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        "Configure Daily Step Goal",
-                        style: GoogleFonts.outfit(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w500),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _stepGoalController,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                        style: GoogleFonts.outfit(color: Colors.white, fontSize: 14),
-                        decoration: InputDecoration(
-                          hintText: "Enter step goal (e.g. 5000)",
-                          hintStyle: const TextStyle(color: Colors.white30),
-                          filled: true,
-                          fillColor: Colors.black26,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: Colors.white10),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: Color(0xFF00E5FF)),
-                          ),
-                        ),
-                        onSubmitted: (val) {
-                          final newGoal = int.tryParse(val) ?? 5000;
-                          _saveStepGoal(newGoal);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text("Daily step goal set to $newGoal!"),
-                              backgroundColor: const Color(0xFF1E2135),
-                            ),
-                          );
-                        },
                       ),
                       const SizedBox(height: 16),
                       
