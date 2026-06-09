@@ -315,6 +315,10 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   int? _lastFsr2;
   double? _lastCop;
 
+  // COP 10-Minute History State
+  final List<double> _copHistory = [-0.15, 0.05, -0.08, 0.12, -0.02, 0.08];
+  Timer? _copHistoryTimer;
+
   // Status dot pulse animation
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
@@ -366,6 +370,19 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     _ble.telemetry.addListener(_checkThresholds);
     _startCountdownTimer();
 
+    // Start 10-minute COP history logger timer
+    _copHistoryTimer = Timer.periodic(const Duration(minutes: 10), (timer) {
+      final data = _ble.telemetry.value;
+      if (data != null && mounted) {
+        setState(() {
+          _copHistory.add(data.cop);
+          if (_copHistory.length > 12) { // Keep last 2 hours (12 points)
+            _copHistory.removeAt(0);
+          }
+        });
+      }
+    });
+
     // Load persisted AI preferences
     _loadPrefs();
   }
@@ -374,6 +391,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   void dispose() {
     _ble.telemetry.removeListener(_checkThresholds);
     _countdownTimer?.cancel();
+    _copHistoryTimer?.cancel();
     _pulseController.dispose();
     super.dispose();
   }
@@ -664,9 +682,9 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
         _lastAlertMsg = newAlert;
         _dismissedThisAlertCycle = false; // Reset dismiss flag for new alert messages
       });
-      // Trigger haptic feedback for new alerts
+      // Trigger short vibration alert haptic feedback for new warnings
       if (newAlert != null) {
-        HapticFeedback.heavyImpact();
+        HapticFeedback.vibrate();
       }
     }
   }
@@ -1320,6 +1338,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
               ] else if (_selectedIndex == 1) ...[
                 // Analytics Tab
                 _buildForceGraphSection(data),
+                const SizedBox(height: 20),
+                _buildCopHistorySection(),
               ] else if (_selectedIndex == 2) ...[
                 // AI Insights Tab
                 _buildAiAnalysisSection(data),
@@ -1335,46 +1355,355 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
 
   /// Activity Section (Steps & Cadence Cards)
   Widget _buildActivitySection(AfoTelemetry data) {
-    bool isWalking = data.cadence > 0;
-
     return Row(
       children: [
         Expanded(
-          child: _buildGlassCard(
-            title: "Steps Walked",
-            value: "${data.stepCount}",
-            icon: Icons.directions_walk_rounded,
-            indicatorText: "Daily Active",
-            indicatorColor: const Color(0xFF00FFC2),
-            iconColor: const Color(0xFF00FFC2),
-            glowingBorder: false,
+          child: _buildStepGoalCard(data),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: _buildCadenceGaugeCard(data),
+        ),
+      ],
+    );
+  }
+
+  /// Step Goal progress ring card widget
+  Widget _buildStepGoalCard(AfoTelemetry data) {
+    const int stepGoal = 5000;
+    double percent = (data.stepCount / stepGoal).clamp(0.0, 1.0);
+    
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
             gradient: const LinearGradient(
               colors: [Color(0xFF102830), Color(0xFF1E2135)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.05),
+              width: 1.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.2),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              )
+            ],
+          ),
+          child: Row(
+            children: [
+              // Progress Ring
+              SizedBox(
+                width: 50,
+                height: 50,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CircularProgressIndicator(
+                      value: percent,
+                      strokeWidth: 3.5,
+                      backgroundColor: Colors.white10,
+                      valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF00FFC2)),
+                    ),
+                    const Center(
+                      child: Icon(
+                        Icons.directions_walk_rounded,
+                        color: Color(0xFF00FFC2),
+                        size: 20,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Step texts
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text(
+                      "Steps Walked",
+                      style: TextStyle(color: Colors.white54, fontSize: 10),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "${data.stepCount}",
+                      style: GoogleFonts.outfit(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "Goal: ${(percent * 100).toStringAsFixed(0)}%",
+                      style: GoogleFonts.outfit(
+                        color: const Color(0xFF00FFC2),
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: _buildGlassCard(
-            title: "Walking Cadence",
-            value: "${data.cadence.toStringAsFixed(0)} SPM",
-            icon: Icons.speed_rounded,
-            indicatorText: isWalking ? "Walking" : "Stationary",
-            indicatorColor: isWalking ? const Color(0xFF8B5CF6) : Colors.white30,
-            iconColor: const Color(0xFF8B5CF6),
-            glowingBorder: isWalking,
+      ),
+    );
+  }
+
+  /// Cadence Gauge progress ring card widget
+  Widget _buildCadenceGaugeCard(AfoTelemetry data) {
+    bool isWalking = data.cadence > 0;
+    // Cadence ranges from 0 to 140 SPM
+    double percent = (data.cadence / 140.0).clamp(0.0, 1.0);
+    Color cadenceColor = data.cadence > 110 
+        ? const Color(0xFFEF4444) // Fast
+        : data.cadence > 80 
+            ? const Color(0xFF8B5CF6) // Target
+            : const Color(0xFFFBBF24); // Slow
+            
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
             gradient: const LinearGradient(
               colors: [Color(0xFF201A3A), Color(0xFF1E2135)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: isWalking ? cadenceColor.withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.05),
+              width: isWalking ? 1.5 : 1.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: isWalking ? cadenceColor.withValues(alpha: 0.15) : Colors.black.withValues(alpha: 0.2),
+                blurRadius: isWalking ? 12 : 8,
+                spreadRadius: isWalking ? 2 : 0,
+                offset: const Offset(0, 4),
+              )
+            ],
+          ),
+          child: Row(
+            children: [
+              // Cadence Gauge Ring
+              SizedBox(
+                width: 50,
+                height: 50,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CircularProgressIndicator(
+                      value: percent,
+                      strokeWidth: 3.5,
+                      backgroundColor: Colors.white10,
+                      valueColor: AlwaysStoppedAnimation<Color>(isWalking ? cadenceColor : Colors.white30),
+                    ),
+                    Center(
+                      child: Icon(
+                        Icons.speed_rounded,
+                        color: isWalking ? cadenceColor : Colors.white30,
+                        size: 20,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Cadence texts
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text(
+                      "Walking Cadence",
+                      style: TextStyle(color: Colors.white54, fontSize: 10),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "${data.cadence.toStringAsFixed(0)} SPM",
+                      style: GoogleFonts.outfit(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isWalking ? (data.cadence > 110 ? "FAST" : data.cadence > 80 ? "TARGET" : "SLOW") : "STATIONARY",
+                      style: GoogleFonts.outfit(
+                        color: isWalking ? cadenceColor : Colors.white30,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
+
+  /// Center of Pressure History Line Chart (10-minute intervals)
+  Widget _buildCopHistorySection() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+        child: Container(
+          height: 280,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E2135).withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.05), width: 1.0),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.2),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              )
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Center of Pressure Trend (10m Intervals)",
+                style: GoogleFonts.outfit(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Expanded(
+                child: LineChart(
+                  LineChartData(
+                    minX: 0,
+                    maxX: 11, // Max 12 points (0 to 11)
+                    minY: -1.2,
+                    maxY: 1.2,
+                    lineTouchData: LineTouchData(
+                      touchTooltipData: LineTouchTooltipData(
+                        getTooltipColor: (_) => const Color(0xFF2A2D40),
+                        getTooltipItems: (touchedSpots) {
+                          return touchedSpots.map((spot) {
+                            String dir = spot.y == 0
+                                ? "Centered"
+                                : spot.y > 0 ? "Posterior" : "Anterior";
+                            return LineTooltipItem(
+                              '${spot.y.toStringAsFixed(2)} ($dir)',
+                              const TextStyle(color: Color(0xFF8B5CF6), fontWeight: FontWeight.bold, fontSize: 13),
+                            );
+                          }).toList();
+                        },
+                      ),
+                    ),
+                    titlesData: FlTitlesData(
+                      show: true,
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 22,
+                          getTitlesWidget: (value, meta) {
+                            // Calculate labels: index 11 is "Now", index 0 is "-110m"
+                            int valInt = value.toInt();
+                            if (valInt % 2 == 1 || valInt == 0 || valInt == 11) {
+                              int minutesAgo = (11 - valInt) * 10;
+                              String label = valInt == 11 ? "Now" : "-${minutesAgo}m";
+                              return Text(
+                                label,
+                                style: const TextStyle(color: Colors.white38, fontSize: 10),
+                              );
+                            }
+                            return const SizedBox.shrink();
+                          },
+                        ),
+                      ),
+                      leftTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 40,
+                          getTitlesWidget: (value, meta) {
+                            if (value == -1.0) {
+                              return const Text("Ant", style: TextStyle(color: Colors.white30, fontSize: 10));
+                            } else if (value == 0.0) {
+                              return const Text("Ctr", style: TextStyle(color: Colors.white30, fontSize: 10));
+                            } else if (value == 1.0) {
+                              return const Text("Post", style: TextStyle(color: Colors.white30, fontSize: 10));
+                            }
+                            return const SizedBox.shrink();
+                          },
+                        ),
+                      ),
+                      topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    ),
+                    gridData: FlGridData(
+                      show: true,
+                      drawVerticalLine: true,
+                      horizontalInterval: 0.5,
+                      verticalInterval: 1.0,
+                      getDrawingHorizontalLine: (value) => FlLine(color: Colors.white10, strokeWidth: 1, dashArray: [5, 5]),
+                      getDrawingVerticalLine: (value) => FlLine(color: Colors.white10, strokeWidth: 1, dashArray: [5, 5]),
+                    ),
+                    borderData: FlBorderData(show: false),
+                    lineBarsData: [
+                      LineChartBarData(
+                        spots: _copHistory.asMap().entries.map((e) {
+                          return FlSpot(e.key.toDouble(), e.value);
+                        }).toList(),
+                        isCurved: true,
+                        barWidth: 4,
+                        isStrokeCapRound: true,
+                        dotData: const FlDotData(show: true),
+                        belowBarData: BarAreaData(
+                          show: true,
+                          gradient: LinearGradient(
+                            colors: [
+                              const Color(0xFF8B5CF6).withValues(alpha: 0.3),
+                              const Color(0xFF00E5FF).withValues(alpha: 0.0),
+                            ],
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                          ),
+                        ),
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF8B5CF6), Color(0xFF00E5FF)],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+
 
   /// Microclimate Section (Temp & Humidity Cards)
   Widget _buildMicroclimateSection(AfoTelemetry data) {
