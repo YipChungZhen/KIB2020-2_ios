@@ -303,10 +303,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   
   int _selectedIndex = 0;
 
-  // Alert Snooze Timestamp
-  DateTime? _snoozeAlertsUntil;
-  bool _dismissedThisAlertCycle = false;
-  String? _lastAlertMsg;
+  // Active warnings state
+  List<String> _activeWarnings = [];
 
   // 30s Refresh Countdown State
   int _countdownSeconds = 30;
@@ -669,8 +667,6 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
 
     final double liveCop = _getCop(data);
 
-
-
     // Capture COP data point in the current 30s cycle
     _cycleStartTime ??= DateTime.now();
     final elapsed = DateTime.now().difference(_cycleStartTime!).inMilliseconds / 1000.0;
@@ -688,31 +684,41 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     // Humidity > 75.0% indicates sweating / maceration risk
     bool isHumid = data.humidity > 75.0;
 
-    String? newAlert;
+    List<String> newWarnings = [];
     if (isUnbalanced) {
-      newAlert = "Force Imbalance! Leaning heavily to the ${liveCop > 0 ? 'Lateral' : 'Medial'} side.";
-    } else if (isHot) {
-      newAlert = "High Orthosis Temp (${data.temperature.toStringAsFixed(1)}°C)! Risk of skin maceration.";
-    } else if (isHumid) {
-      newAlert = "Moisture Warning (${data.humidity.toStringAsFixed(1)}%)! Risk of sweat buildup.";
+      newWarnings.add("Force Imbalance! Leaning heavily to the ${liveCop > 0 ? 'Lateral' : 'Medial'} side.");
+    }
+    if (isHot) {
+      newWarnings.add("High Orthosis Temp (${data.temperature.toStringAsFixed(1)}°C)! Risk of skin maceration.");
+    }
+    if (isHumid) {
+      newWarnings.add("Moisture Warning (${data.humidity.toStringAsFixed(1)}%)! Risk of sweat buildup.");
     }
 
-    if (newAlert != _lastAlertMsg) {
+    // Check if there are any new warnings that weren't present before
+    bool hasNewWarning = false;
+    for (var warning in newWarnings) {
+      if (!_activeWarnings.contains(warning)) {
+        hasNewWarning = true;
+        break;
+      }
+    }
+
+    // Update state if warnings list changed
+    bool listsEqual = _activeWarnings.length == newWarnings.length &&
+        _activeWarnings.every((w) => newWarnings.contains(w));
+    if (!listsEqual) {
       setState(() {
-        _lastAlertMsg = newAlert;
-        _dismissedThisAlertCycle = false; // Reset dismiss flag for new alert messages
+        _activeWarnings = newWarnings;
       });
       // Trigger short vibration alert haptic feedback for new warnings
-      if (newAlert != null) {
+      if (hasNewWarning) {
         HapticFeedback.vibrate();
       }
     }
   }
 
-  bool get _isSnoozed {
-    if (_snoozeAlertsUntil == null) return false;
-    return DateTime.now().isBefore(_snoozeAlertsUntil!);
-  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -777,8 +783,6 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                     ),
                     _buildDeviceList(),
                   ] else ...[
-                    _buildActiveAlertBanner(),
-                    if (_isSnoozed) _buildSnoozeBanner(),
                     _buildMetricsSection(),
                   ]
                 ],
@@ -873,7 +877,69 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
               ),
             ),
             const SizedBox(width: 12),
-            if (connState == AfoConnectionState.connected)
+            if (connState == AfoConnectionState.connected) ...[
+              PopupMenuButton<String>(
+                offset: const Offset(0, 50),
+                color: const Color(0xFF1E2135),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: const BorderSide(color: Colors.white10),
+                ),
+                itemBuilder: (context) {
+                  if (_activeWarnings.isEmpty) {
+                    return [
+                      const PopupMenuItem<String>(
+                        enabled: false,
+                        child: Row(
+                          children: [
+                            Icon(Icons.check_circle_outline_rounded, color: Color(0xFF10B981), size: 18),
+                            SizedBox(width: 8),
+                            Text("System Safe: No Warnings", style: TextStyle(color: Colors.white70, fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                    ];
+                  }
+                  return _activeWarnings.map((warning) {
+                    return PopupMenuItem<String>(
+                      enabled: false,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4.0),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.warning_amber_rounded, color: Color(0xFFEF4444), size: 18),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                warning,
+                                style: const TextStyle(color: Colors.white, fontSize: 13),
+                                softWrap: true,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList();
+                },
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _activeWarnings.isNotEmpty
+                        ? const Color(0xFFEF4444).withValues(alpha: 0.15)
+                        : const Color(0xFF10B981).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    _activeWarnings.isNotEmpty ? Icons.warning_amber_rounded : Icons.notifications_none_rounded,
+                    color: _activeWarnings.isNotEmpty ? const Color(0xFFEF4444) : const Color(0xFF10B981),
+                    size: 22,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
               Tooltip(
                 message: "Disconnect",
                 child: IconButton(
@@ -884,7 +950,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
-              )
+              ),
+            ]
             else if (!isScanning)
               Tooltip(
                 message: "Scan Devices",
@@ -1086,176 +1153,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     );
   }
 
-  /// Active warning alert banner at the top of the dashboard
-  Widget _buildActiveAlertBanner() {
-    final bool showBanner = _lastAlertMsg != null && !_dismissedThisAlertCycle && !_isSnoozed;
 
-    return SliverToBoxAdapter(
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 350),
-        curve: Curves.easeInOut,
-        alignment: Alignment.topCenter,
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
-          switchInCurve: Curves.easeOut,
-          switchOutCurve: Curves.easeIn,
-          transitionBuilder: (child, animation) {
-            return FadeTransition(
-              opacity: animation,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, -0.15),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
-              ),
-            );
-          },
-          child: showBanner
-              ? Padding(
-                  key: const ValueKey('alert_banner'),
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEF4444).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.4), width: 1.5),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFFEF4444).withValues(alpha: 0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        )
-                      ],
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(Icons.warning_amber_rounded, color: Color(0xFFEF4444), size: 28),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                "Safety System Warning",
-                                style: GoogleFonts.outfit(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: const Color(0xFFEF4444),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _lastAlertMsg!,
-                                style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
-                              ),
-                              const SizedBox(height: 8),
-                              Wrap(
-                                spacing: 16,
-                                runSpacing: 4,
-                                children: [
-                                  TextButton(
-                                    onPressed: () {
-                                      HapticFeedback.mediumImpact();
-                                      setState(() {
-                                        _dismissedThisAlertCycle = true;
-                                      });
-                                    },
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: Colors.white70,
-                                      padding: EdgeInsets.zero,
-                                      minimumSize: const Size(50, 30),
-                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    ),
-                                    child: const Text("Dismiss", style: TextStyle(fontSize: 12, decoration: TextDecoration.underline)),
-                                  ),
-                                  TextButton(
-                                    onPressed: () {
-                                      HapticFeedback.heavyImpact();
-                                      setState(() {
-                                        _snoozeAlertsUntil = DateTime.now().add(const Duration(minutes: 5));
-                                      });
-                                    },
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: Colors.white70,
-                                      padding: EdgeInsets.zero,
-                                      minimumSize: const Size(50, 30),
-                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    ),
-                                    child: const Text("Snooze (5m)", style: TextStyle(fontSize: 12, decoration: TextDecoration.underline)),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : const SizedBox(
-                  key: ValueKey('alert_empty'),
-                  width: double.infinity,
-                  height: 0,
-                ),
-        ),
-      ),
-    );
-  }
-
-  /// Snooze indicator banner
-  Widget _buildSnoozeBanner() {
-    final remaining = _snoozeAlertsUntil?.difference(DateTime.now());
-    final minutesLeft = remaining?.inMinutes ?? 0;
-    final secondsLeft = remaining?.inSeconds.remainder(60) ?? 0;
-
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFBBF24).withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFFBBF24).withValues(alpha: 0.3), width: 1.0),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.snooze_rounded, color: Color(0xFFFBBF24), size: 22),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  "Alerts snoozed · Resume in ${minutesLeft}m ${secondsLeft.toString().padLeft(2, '0')}s",
-                  style: GoogleFonts.outfit(
-                    fontSize: 13,
-                    color: const Color(0xFFFBBF24),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-              TextButton(
-                onPressed: () {
-                  HapticFeedback.lightImpact();
-                  setState(() {
-                    _snoozeAlertsUntil = null;
-                  });
-                },
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFFFBBF24),
-                  padding: EdgeInsets.zero,
-                  minimumSize: const Size(50, 30),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: const Text("Resume", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   Widget _buildCountdownTimerSection() {
     final String secondsStr = _countdownSeconds.toString().padLeft(2, '0');
