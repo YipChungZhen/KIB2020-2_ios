@@ -318,6 +318,15 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   List<FlSpot> _lastCopWindow = [];
   DateTime? _cycleStartTime;
 
+  // Buffers and Display values for 30s average refresh
+  int _displayFsr1 = 1023;
+  int _displayFsr2 = 1023;
+  double _displayCop = 0.0;
+  bool _isFirstTelemetry = true;
+  final List<int> _cycleFsr1Buffer = [];
+  final List<int> _cycleFsr2Buffer = [];
+  final List<double> _cycleCopBuffer = [];
+
   // Status dot pulse animation
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
@@ -655,6 +664,23 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
             _lastCopWindow = List.from(_currentCopWindow);
             _currentCopWindow.clear();
             _cycleStartTime = DateTime.now();
+
+            // Compute averages for 30s display refresh
+            int getAvgInt(List<int> list, int fallback) {
+              if (list.isEmpty) return fallback;
+              return (list.reduce((a, b) => a + b) / list.length).round();
+            }
+            double getAvgDouble(List<double> list, double fallback) {
+              if (list.isEmpty) return fallback;
+              return list.reduce((a, b) => a + b) / list.length;
+            }
+            _displayFsr1 = getAvgInt(_cycleFsr1Buffer, _ble.telemetry.value?.fsr1 ?? 1023);
+            _displayFsr2 = getAvgInt(_cycleFsr2Buffer, _ble.telemetry.value?.fsr2 ?? 1023);
+            _displayCop = getAvgDouble(_cycleCopBuffer, _ble.telemetry.value != null ? _getCop(_ble.telemetry.value!) : 0.0);
+            
+            _cycleFsr1Buffer.clear();
+            _cycleFsr2Buffer.clear();
+            _cycleCopBuffer.clear();
           }
         });
       }
@@ -666,6 +692,18 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     if (data == null) return;
 
     final double liveCop = _getCop(data);
+
+    // Collect telemetry readings into 30s cycle buffers
+    _cycleFsr1Buffer.add(data.fsr1);
+    _cycleFsr2Buffer.add(data.fsr2);
+    _cycleCopBuffer.add(liveCop);
+
+    if (_isFirstTelemetry) {
+      _displayFsr1 = data.fsr1;
+      _displayFsr2 = data.fsr2;
+      _displayCop = liveCop;
+      _isFirstTelemetry = false;
+    }
 
     // Capture COP data point in the current 30s cycle
     _cycleStartTime ??= DateTime.now();
@@ -1861,7 +1899,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
 
   /// Balance and COP Analytics Card
   Widget _buildBalanceAnalyticsSection(AfoTelemetry data) {
-    final double liveCop = _getCop(data);
+    final double liveCop = _displayCop;
     // Determine pointer offset for COP visualization
     // liveCop goes from -1.0 (Medial) to +1.0 (Lateral)
     double alignmentVal = (liveCop + 1.0) / 2.0; // Normalized to 0.0 - 1.0
@@ -1938,7 +1976,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // 1. Dynamic Foot Sole Visualizer
-              _buildFootSoleVisualizer(data),
+              _buildFootSoleVisualizer(_displayFsr1, _displayFsr2, _displayCop),
               const SizedBox(width: 24),
               
               // 2. Sliding Center of Pressure indicator scale
@@ -2054,10 +2092,10 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   }
 
   /// Foot Sole pressure illustration
-  Widget _buildFootSoleVisualizer(AfoTelemetry data) {
-    final double force1 = _calculateForceNewton(data.fsr1);
-    final double force2 = _calculateForceNewton(data.fsr2);
-    final double liveCop = _getCop(data);
+  Widget _buildFootSoleVisualizer(int fsr1, int fsr2, double cop) {
+    final double force1 = _calculateForceNewton(fsr1);
+    final double force2 = _calculateForceNewton(fsr2);
+    final double liveCop = cop;
 
     // Scale size of sensors according to force in Newtons (0 - 100)
     double fsr1Size = 25 + (force1 / 100.0) * 35;
@@ -2193,8 +2231,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
 
   /// Live Bar Chart Section
   Widget _buildForceGraphSection(AfoTelemetry data) {
-    final double force1 = _calculateForceNewton(data.fsr1);
-    final double force2 = _calculateForceNewton(data.fsr2);
+    final double force1 = _calculateForceNewton(_displayFsr1);
+    final double force2 = _calculateForceNewton(_displayFsr2);
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
