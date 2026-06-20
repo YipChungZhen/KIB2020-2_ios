@@ -314,6 +314,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   // COP 30s Countdown History State
   int _stepGoal = 5000;
   TextEditingController? _stepGoalController;
+  TextEditingController? _apiKeyController;
+  TextEditingController? _devPasswordController;
   final List<FlSpot> _currentCopWindow = [];
   List<FlSpot> _lastCopWindow = [];
   DateTime? _cycleStartTime;
@@ -333,9 +335,10 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
 
   // AI Settings State
   bool _isAiConsented = false;
-  String _deepSeekApiKey = "sk-352248d215c5440b84e7f7263cfede53";
+  String _deepSeekApiKey = "";
   bool _isSimulationMode = true;
   bool _developerSettingsExpanded = false;
+  bool _isDeveloperModeUnlocked = false;
   bool _isWifiPermissionGranted = false;
   
   // AI Generation State
@@ -386,6 +389,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     _startCountdownTimer();
 
     _stepGoalController = TextEditingController(text: "5000");
+    _apiKeyController = TextEditingController(text: "");
+    _devPasswordController = TextEditingController();
     _cycleStartTime = DateTime.now();
     _lastCopWindow = [
       const FlSpot(0.0, -0.1),
@@ -407,6 +412,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     _countdownTimer?.cancel();
     _pulseController.dispose();
     _stepGoalController?.dispose();
+    _apiKeyController?.dispose();
+    _devPasswordController?.dispose();
     super.dispose();
   }
 
@@ -414,11 +421,12 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _isAiConsented = prefs.getBool('isAiConsented') ?? false;
-      _deepSeekApiKey = "sk-352248d215c5440b84e7f7263cfede53";
+      _deepSeekApiKey = prefs.getString('deepSeekApiKey') ?? "";
       _isSimulationMode = prefs.getBool('isSimulationMode') ?? true;
       _isWifiPermissionGranted = prefs.getBool('isWifiPermissionGranted') ?? false;
       _stepGoal = prefs.getInt('stepGoal') ?? 5000;
       _stepGoalController?.text = _stepGoal.toString();
+      _apiKeyController?.text = _deepSeekApiKey;
     });
   }
   Future<void> _saveConsent(bool consented) async {
@@ -521,6 +529,14 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     await prefs.setBool('isSimulationMode', isSim);
     setState(() {
       _isSimulationMode = isSim;
+    });
+  }
+
+  Future<void> _saveApiKey(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('deepSeekApiKey', key);
+    setState(() {
+      _deepSeekApiKey = key;
     });
   }
 
@@ -2641,6 +2657,61 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                 ),
             ],
           ),
+          const SizedBox(height: 16),
+          // AI Analysis Source selection moved here, outside developer settings
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.black26,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _saveSimulationMode(true),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _isSimulationMode ? const Color(0xFF8B5CF6) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(11),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        "Local LLM",
+                        style: TextStyle(
+                          color: _isSimulationMode ? Colors.white : Colors.white54,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _saveSimulationMode(false),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: !_isSimulationMode ? const Color(0xFF00E5FF) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(11),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        "Deepseek AI",
+                        style: TextStyle(
+                          color: !_isSimulationMode ? Colors.black : Colors.white54,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 20),
           
           if (_isAiLoading)
@@ -2815,87 +2886,165 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                 });
               },
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "AI Analysis Source",
-                        style: GoogleFonts.outfit(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w500),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.black26,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.white10),
+                if (!_isDeveloperModeUnlocked)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Developer Password Required",
+                          style: GoogleFonts.outfit(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w500),
                         ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: GestureDetector(
-                                onTap: () => _saveSimulationMode(true),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 10),
-                                  decoration: BoxDecoration(
-                                    color: _isSimulationMode ? const Color(0xFF8B5CF6) : Colors.transparent,
-                                    borderRadius: BorderRadius.circular(11),
-                                  ),
-                                  alignment: Alignment.center,
-                                  child: Text(
-                                    "Local LLM",
-                                    style: TextStyle(
-                                      color: _isSimulationMode ? Colors.white : Colors.white54,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
+                        const SizedBox(height: 8),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black26,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.white10),
+                          ),
+                          child: TextField(
+                            controller: _devPasswordController,
+                            style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
+                            obscureText: true,
+                            decoration: InputDecoration(
+                              hintText: "Enter password",
+                              hintStyle: GoogleFonts.outfit(color: Colors.white24, fontSize: 13),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              border: InputBorder.none,
+                              suffixIcon: IconButton(
+                                icon: const Icon(Icons.lock_open, color: Color(0xFF00E5FF), size: 18),
+                                onPressed: () {
+                                  if (_devPasswordController?.text == "0000") {
+                                    setState(() {
+                                      _isDeveloperModeUnlocked = true;
+                                      _devPasswordController?.clear();
+                                    });
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text("Developer Mode Unlocked."),
+                                        backgroundColor: Color(0xFF1E2135),
+                                      ),
+                                    );
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text("Incorrect password."),
+                                        backgroundColor: Colors.redAccent,
+                                      ),
+                                    );
+                                    _devPasswordController?.clear();
+                                  }
+                                },
                               ),
                             ),
-                            Expanded(
-                              child: GestureDetector(
-                                onTap: () => _saveSimulationMode(false),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 10),
-                                  decoration: BoxDecoration(
-                                    color: !_isSimulationMode ? const Color(0xFF00E5FF) : Colors.transparent,
-                                    borderRadius: BorderRadius.circular(11),
+                            onSubmitted: (val) {
+                              if (val == "0000") {
+                                setState(() {
+                                  _isDeveloperModeUnlocked = true;
+                                  _devPasswordController?.clear();
+                                });
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text("Developer Mode Unlocked."),
+                                    backgroundColor: Color(0xFF1E2135),
                                   ),
-                                  alignment: Alignment.center,
-                                  child: Text(
-                                    "Deepseek AI",
-                                    style: TextStyle(
-                                      color: !_isSimulationMode ? Colors.black : Colors.white54,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
+                                );
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text("Incorrect password."),
+                                    backgroundColor: Colors.redAccent,
+                                  ),
+                                );
+                                _devPasswordController?.clear();
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0, left: 16.0, right: 16.0, bottom: 8.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Deepseek API Key",
+                          style: GoogleFonts.outfit(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w500),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black26,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.white10),
+                          ),
+                          child: TextField(
+                            controller: _apiKeyController,
+                            style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
+                            obscureText: true,
+                            decoration: InputDecoration(
+                              hintText: "Enter Deepseek API key",
+                              hintStyle: GoogleFonts.outfit(color: Colors.white24, fontSize: 13),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              border: InputBorder.none,
+                              suffixIcon: IconButton(
+                                icon: const Icon(Icons.check, color: Color(0xFF00E5FF), size: 18),
+                                onPressed: () {
+                                  _saveApiKey(_apiKeyController?.text ?? "");
+                                  FocusScope.of(context).unfocus();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text("API Key saved successfully."),
+                                      backgroundColor: Color(0xFF1E2135),
                                     ),
-                                  ),
-                                ),
+                                  );
+                                },
                               ),
+                            ),
+                            onChanged: (val) {
+                              _saveApiKey(val);
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            TextButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  _isDeveloperModeUnlocked = false;
+                                });
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text("Developer Mode Locked."),
+                                    backgroundColor: Color(0xFF1E2135),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.lock, size: 14, color: Colors.white54),
+                              label: const Text("Lock Dev Mode", style: TextStyle(fontSize: 12, color: Colors.white54)),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                _saveConsent(false);
+                                _saveWifiPermission(false);
+                                _saveSimulationMode(true);
+                              },
+                              style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                              child: const Text("Revoke AI Consent", style: TextStyle(fontSize: 12, decoration: TextDecoration.underline)),
                             ),
                           ],
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      
-                      // Revoke Consent Option
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: () {
-                            _saveConsent(false);
-                            _saveWifiPermission(false);
-                            _saveSimulationMode(true);
-                          },
-                          style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-                          child: const Text("Revoke AI Consent", style: TextStyle(fontSize: 12, decoration: TextDecoration.underline)),
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
               ],
             ),
           ),
